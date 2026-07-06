@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local uploads and generated files
+backend/storage/uploads/
+backend/storage/temp/
+storage/uploads/
+uploads/
+
+# Databases / local files
+*.sqlite
+*.db
+mlruns/
+mlartifacts/
+
+# Docker volumes / local data
+postgres_data/
+qdrant_data/
+docker-data/
+
+# Model/cache files
+.cache/
+huggingface/
+sentence_transformers/
+*.safetensors
+
+# Large temporary files
+*.zip
+*.tar
+*.gz
