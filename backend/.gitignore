@@ -56,3 +56,11 @@ sentence_transformers/
 *.zip
 *.tar
 *.gz
+
+# Runtime uploaded/quarantined files
+storage/
+
+# Evaluation generated outputs
+evals/reports/*.json
+evals/reports/*.csv
+evals/test_uploads/

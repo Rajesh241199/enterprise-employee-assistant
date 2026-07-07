@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_debug: bool = True
 
     app_upload_dir: str = "storage/uploads"
+    app_quarantine_dir: str = "storage/quarantine"
 
     database_url: str
 
@@ -29,6 +30,22 @@ class Settings(BaseSettings):
     ocr_min_text_chars_per_page: int = 50
     ocr_language: str = "eng"
     tesseract_cmd: str | None = None
+
+    cors_allowed_origins: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173"
+    )
+
+    rate_limit_requests: int = 120
+    rate_limit_window_seconds: int = 60
+
+    login_rate_limit_requests: int = 10
+    login_rate_limit_window_seconds: int = 60
+
+    max_request_body_bytes: int = 10 * 1024 * 1024
+    max_upload_file_bytes: int = 10 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -19,6 +19,8 @@ from app.rag.retrieval import (
     ensure_qdrant_collection,
     upsert_chunks_to_qdrant,
 )
+from app.security.document_domain_validator import document_domain_validator
+from app.security.llm_guardrails import guardrails
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
@@ -101,7 +103,6 @@ def dataframe_to_table_chunks(
         if header and not header.lower().startswith("unnamed")
     ]
 
-    # Avoid treating broken PDF layout text as a real table.
     if len(meaningful_headers) < 2:
         return chunks
 
@@ -115,17 +116,13 @@ def dataframe_to_table_chunks(
         if not non_empty_values:
             continue
 
-        # Continuation row caused by wrapped PDF text.
-        # Attach it to the previous meaningful row instead of creating noisy chunks.
         if len(non_empty_values) == 1 and pending_row_text:
             pending_row_text = f"{pending_row_text} {non_empty_values[0]}"
             continue
 
-        # Skip weak one-cell rows.
         if len(non_empty_values) < 2:
             continue
 
-        # Save previous pending row before starting a new one.
         if pending_row_text:
             chunks.append(
                 TextChunk(
@@ -169,7 +166,6 @@ def dataframe_to_table_chunks(
             "ocr_applied": False,
         }
 
-    # Save final pending row.
     if pending_row_text:
         chunks.append(
             TextChunk(
@@ -184,50 +180,58 @@ def dataframe_to_table_chunks(
     return chunks
 
 
-def extract_pdf_text_chunks(file_path: Path, start_index: int = 0) -> list[TextChunk]:
+def extract_pdf_text_chunks(
+    file_path: Path,
+    start_index: int = 0,
+) -> list[TextChunk]:
     pdf_document = fitz.open(str(file_path))
 
-    all_chunks: list[TextChunk] = []
-    next_chunk_index = start_index
+    try:
+        all_chunks: list[TextChunk] = []
+        next_chunk_index = start_index
 
-    for page_index in range(pdf_document.page_count):
-        page = pdf_document.load_page(page_index)
+        for page_index in range(pdf_document.page_count):
+            page = pdf_document.load_page(page_index)
 
-        page_text = page.get_text("text") or ""
-        extractor = "pymupdf"
-        ocr_applied = False
+            page_text = page.get_text("text") or ""
+            extractor = "pymupdf"
+            ocr_applied = False
 
-        if should_apply_ocr(page_text):
-            page_image = render_pdf_page_to_image(page)
-            ocr_text = ocr_image(page_image)
+            if should_apply_ocr(page_text):
+                page_image = render_pdf_page_to_image(page)
+                ocr_text = ocr_image(page_image)
 
-            if ocr_text.strip():
-                page_text = ocr_text
-                extractor = "tesseract_ocr"
-                ocr_applied = True
+                if ocr_text.strip():
+                    page_text = ocr_text
+                    extractor = "tesseract_ocr"
+                    ocr_applied = True
 
-        page_chunks = split_text_into_chunks(
-            text=page_text,
-            chunk_size=1200,
-            chunk_overlap=200,
-            page_number=page_index + 1,
-            start_index=next_chunk_index,
-            metadata={
-                "chunk_type": "text",
-                "extractor": extractor,
-                "ocr_applied": ocr_applied,
-            },
-        )
+            page_chunks = split_text_into_chunks(
+                text=page_text,
+                chunk_size=1200,
+                chunk_overlap=200,
+                page_number=page_index + 1,
+                start_index=next_chunk_index,
+                metadata={
+                    "chunk_type": "text",
+                    "extractor": extractor,
+                    "ocr_applied": ocr_applied,
+                },
+            )
 
-        all_chunks.extend(page_chunks)
-        next_chunk_index += len(page_chunks)
+            all_chunks.extend(page_chunks)
+            next_chunk_index += len(page_chunks)
 
-    pdf_document.close()
+        return all_chunks
 
-    return all_chunks
+    finally:
+        pdf_document.close()
 
 
-def extract_pdf_table_chunks(file_path: Path, start_index: int = 0) -> list[TextChunk]:
+def extract_pdf_table_chunks(
+    file_path: Path,
+    start_index: int = 0,
+) -> list[TextChunk]:
     all_chunks: list[TextChunk] = []
     next_chunk_index = start_index
 
@@ -375,7 +379,10 @@ def extract_chunks_from_document(document: Document) -> list[TextChunk]:
     )
 
 
-def cleanup_existing_document_chunks(db: Session, document: Document) -> None:
+def cleanup_existing_document_chunks(
+    db: Session,
+    document: Document,
+) -> None:
     existing_chunks = (
         db.query(DocumentChunk)
         .filter(DocumentChunk.document_id == document.id)
@@ -397,7 +404,10 @@ def cleanup_existing_document_chunks(db: Session, document: Document) -> None:
     db.flush()
 
 
-def build_chunk_metadata(document: Document, chunk: TextChunk) -> dict:
+def build_chunk_metadata(
+    document: Document,
+    chunk: TextChunk,
+) -> dict:
     base_metadata = {
         "document_type": document.document_type,
         "policy_name": document.policy_name,
@@ -411,6 +421,113 @@ def build_chunk_metadata(document: Document, chunk: TextChunk) -> dict:
     return {
         **base_metadata,
         **chunk.metadata,
+    }
+
+
+def validate_document_domain_relevance(
+    document: Document,
+    chunks: list[TextChunk],
+) -> dict:
+    """
+    Validates whether the document belongs to the allowed enterprise
+    employee-assistant knowledge domains.
+
+    Blocks unrelated content such as:
+    - military / defense articles
+    - random news
+    - politics
+    - entertainment
+    - sports
+    - unrelated technical articles
+    """
+    result = document_domain_validator.validate(
+        document=document,
+        chunks=chunks,
+    )
+
+    if not result.allowed:
+        raise ValueError(result.reason)
+
+   
+    return {
+    "domain_validation_passed": True,
+    "domain_score": result.score,
+    "matched_categories": result.matched_categories,
+    "matched_keywords": result.matched_keywords[:20],
+    "blocked_keywords": result.blocked_keywords,
+    "reason": result.reason,
+    }
+
+
+def scan_chunks_for_security(
+    document: Document,
+    chunks: list[TextChunk],
+) -> tuple[list[TextChunk], dict]:
+    """
+    Security scan before embedding and vector insertion.
+
+    Blocks:
+    - indirect prompt injection inside uploaded documents
+    - poisoned RAG instructions
+    - secrets accidentally included in documents
+    - malicious markdown / HTML
+    - encoded attacks
+
+    This prevents unsafe chunks from entering PostgreSQL and Qdrant.
+    """
+    sanitized_chunks: list[TextChunk] = []
+    blocked_findings: list[dict] = []
+    sanitized_count = 0
+
+    for chunk in chunks:
+        scan_result = guardrails.scan_document_text(
+            text=chunk.text,
+            document_name=document.file_name,
+        )
+
+        if not scan_result.allowed:
+            for finding in scan_result.findings:
+                blocked_findings.append(
+                    {
+                        "risk": finding.risk.value,
+                        "severity": finding.severity,
+                        "reason": finding.reason,
+                        "matched_text": finding.matched_text,
+                        "chunk_index": chunk.chunk_index,
+                        "page_number": chunk.page_number,
+                    }
+                )
+
+            continue
+
+        sanitized_text = scan_result.sanitized_text or chunk.text
+
+        if sanitized_text != chunk.text:
+            sanitized_count += 1
+            chunk.text = sanitized_text
+            chunk.metadata = {
+                **chunk.metadata,
+                "security_sanitized": True,
+            }
+
+        chunk.metadata = {
+            **chunk.metadata,
+            "security_scanned": True,
+        }
+
+        sanitized_chunks.append(chunk)
+
+    if blocked_findings:
+        raise ValueError(
+            "Document security scan failed. "
+            f"Blocked findings: {blocked_findings[:5]}"
+        )
+
+    return sanitized_chunks, {
+        "security_scan_passed": True,
+        "chunks_scanned": len(chunks),
+        "chunks_after_security_scan": len(sanitized_chunks),
+        "chunks_sanitized": sanitized_count,
     }
 
 
@@ -431,7 +548,10 @@ def index_document(
         ensure_qdrant_collection()
 
         if force_reindex:
-            cleanup_existing_document_chunks(db=db, document=document)
+            cleanup_existing_document_chunks(
+                db=db,
+                document=document,
+            )
 
         chunks = extract_chunks_from_document(document)
 
@@ -446,6 +566,29 @@ def index_document(
                 "chunks_created": 0,
             }
 
+        domain_validation_metadata = validate_document_domain_relevance(
+            document=document,
+            chunks=chunks,
+        )
+
+        chunks, security_scan_metadata = scan_chunks_for_security(
+            document=document,
+            chunks=chunks,
+        )
+
+        if not chunks:
+            document.status = DocumentStatus.FAILED.value
+            db.commit()
+
+            return {
+                "document_id": document.id,
+                "status": document.status,
+                "message": "No chunks remained after security scanning.",
+                "chunks_created": 0,
+                "domain_validation": domain_validation_metadata,
+                "security_scan": security_scan_metadata,
+            }
+
         chunk_texts = [chunk.text for chunk in chunks]
         vectors = embed_texts(chunk_texts)
 
@@ -453,7 +596,10 @@ def index_document(
 
         for chunk, vector in zip(chunks, vectors):
             point_id = str(uuid4())
-            metadata = build_chunk_metadata(document=document, chunk=chunk)
+            metadata = build_chunk_metadata(
+                document=document,
+                chunk=chunk,
+            )
 
             db_chunk = DocumentChunk(
                 document_id=document.id,
@@ -490,13 +636,25 @@ def index_document(
         upsert_chunks_to_qdrant(qdrant_points)
 
         document.status = DocumentStatus.INDEXED.value
+
+        existing_metadata = dict(document.extra_metadata or {})
+        existing_metadata["domain_validation"] = domain_validation_metadata
+        existing_metadata["index_security"] = security_scan_metadata
+        document.extra_metadata = existing_metadata
+
+        db.add(document)
         db.commit()
 
         return {
             "document_id": document.id,
             "status": document.status,
-            "message": "Document indexed successfully with OCR fallback support.",
+            "message": (
+                "Document indexed successfully with OCR fallback, "
+                "domain validation, and security scanning."
+            ),
             "chunks_created": len(chunks),
+            "domain_validation": domain_validation_metadata,
+            "security_scan": security_scan_metadata,
         }
 
     except Exception as exc:

@@ -1,25 +1,22 @@
-import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from qdrant_client import QdrantClient, models
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.file_validation import (
+    build_upload_security_metadata,
+    find_duplicate_document_by_checksum,
+    get_upload_directory,
+    quarantine_file,
+    store_upload_file_securely,
+)
 from app.core.permissions import require_authenticated_user
-from app.db.models import Document, DocumentChunk, User
+from app.db.models import Document, User
 from app.db.session import get_db
 from app.rag.ingestion import index_document
 
 
 router = APIRouter()
-
-
-ALLOWED_DOCUMENT_EXTENSIONS = {
-    ".pdf",
-    ".docx",
-    ".txt",
-}
 
 
 ALLOWED_ACCESS_LEVELS = {
@@ -63,36 +60,6 @@ def ensure_document_admin_user(current_user: User) -> None:
         )
 
 
-def get_upload_directory() -> Path:
-    upload_dir = Path(settings.app_upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    return upload_dir
-
-
-def validate_uploaded_file(file: UploadFile) -> str:
-    original_file_name = Path(file.filename or "").name
-
-    if not original_file_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file must have a valid file name.",
-        )
-
-    file_extension = Path(original_file_name).suffix.lower()
-
-    if file_extension not in ALLOWED_DOCUMENT_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Unsupported file type. Allowed file types are: "
-                f"{', '.join(sorted(ALLOWED_DOCUMENT_EXTENSIONS))}"
-            ),
-        )
-
-    return original_file_name
-
-
 def validate_access_level(access_level: str) -> str:
     normalized_access_level = access_level.strip()
 
@@ -108,6 +75,28 @@ def validate_access_level(access_level: str) -> str:
     return normalized_access_level
 
 
+def validate_required_text_field(
+    value: str,
+    field_name: str,
+    max_length: int = 255,
+) -> str:
+    cleaned_value = " ".join((value or "").split())
+
+    if not cleaned_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} is required.",
+        )
+
+    if len(cleaned_value) > max_length:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} must not exceed {max_length} characters.",
+        )
+
+    return cleaned_value
+
+
 def document_to_dict(document: Document) -> dict:
     return {
         "id": document.id,
@@ -118,50 +107,13 @@ def document_to_dict(document: Document) -> dict:
         "access_level": document.access_level,
         "status": document.status,
         "uploaded_by": document.uploaded_by,
+        "extra_metadata": document.extra_metadata,
         "created_at": (
             document.created_at.isoformat()
             if getattr(document, "created_at", None)
             else None
         ),
     }
-
-
-def delete_qdrant_points_for_document(document_id: int) -> None:
-    client = QdrantClient(
-        host=settings.qdrant_host,
-        port=int(settings.qdrant_port),
-    )
-
-    try:
-        client.delete(
-            collection_name=settings.qdrant_collection,
-            points_selector=models.FilterSelector(
-                filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="document_id",
-                            match=models.MatchValue(value=document_id),
-                        )
-                    ]
-                )
-            ),
-        )
-
-    except Exception:
-        # Safe fallback:
-        # If the collection does not exist yet or Qdrant has no points,
-        # indexing can still continue.
-        return
-
-
-def clear_existing_document_index(db: Session, document_id: int) -> None:
-    db.query(DocumentChunk).filter(
-        DocumentChunk.document_id == document_id
-    ).delete(synchronize_session=False)
-
-    db.commit()
-
-    delete_qdrant_points_for_document(document_id=document_id)
 
 
 @router.post("/documents/upload")
@@ -176,26 +128,66 @@ def upload_document(
 ):
     ensure_document_admin_user(current_user)
 
-    original_file_name = validate_uploaded_file(file)
     normalized_access_level = validate_access_level(access_level)
+
+    cleaned_document_type = validate_required_text_field(
+        value=document_type,
+        field_name="document_type",
+        max_length=100,
+    )
+
+    cleaned_policy_name = validate_required_text_field(
+        value=policy_name,
+        field_name="policy_name",
+        max_length=255,
+    )
+
+    cleaned_department_owner = validate_required_text_field(
+        value=department_owner,
+        field_name="department_owner",
+        max_length=100,
+    )
 
     upload_dir = get_upload_directory()
 
-    stored_file_name = f"{Path(original_file_name).stem}_{current_user.id}{Path(original_file_name).suffix}"
-    file_path = upload_dir / stored_file_name
+    stored_upload = store_upload_file_securely(
+        file=file,
+        upload_dir=upload_dir,
+        current_user_id=current_user.id,
+    )
 
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    duplicate_document = find_duplicate_document_by_checksum(
+        db=db,
+        sha256=stored_upload.sha256,
+    )
+
+    if duplicate_document:
+        stored_upload.file_path.unlink(missing_ok=True)
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Duplicate document upload blocked.",
+                "duplicate_document_id": duplicate_document.id,
+                "duplicate_file_name": duplicate_document.file_name,
+                "sha256": stored_upload.sha256,
+            },
+        )
+
+    upload_security_metadata = build_upload_security_metadata(stored_upload)
 
     document = Document(
-        file_name=original_file_name,
-        file_path=str(file_path),
-        document_type=document_type.strip(),
-        policy_name=policy_name.strip(),
-        department_owner=department_owner.strip(),
+        file_name=stored_upload.safe_original_file_name,
+        file_path=str(stored_upload.file_path),
+        document_type=cleaned_document_type,
+        policy_name=cleaned_policy_name,
+        department_owner=cleaned_department_owner,
         access_level=normalized_access_level,
         status="uploaded",
         uploaded_by=current_user.id,
+        extra_metadata={
+            "upload_security": upload_security_metadata,
+        },
     )
 
     db.add(document)
@@ -238,16 +230,63 @@ def index_uploaded_document(
             detail=f"Document with id={document_id} was not found.",
         )
 
-    if force_reindex:
-        clear_existing_document_index(
-            db=db,
-            document_id=document_id,
+    if not Path(document.file_path).exists():
+        document.status = "failed"
+        db.add(document)
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document file was not found in storage.",
         )
 
-    result = index_document(
-        db=db,
-        document=document,
-    )
+    try:
+        result = index_document(
+            db=db,
+            document=document,
+            force_reindex=force_reindex,
+        )
+
+    except Exception as exc:
+        reason = str(exc)
+        reason_lower = reason.lower()
+
+        is_validation_failure = (
+            "security scan failed" in reason_lower
+            or "domain validation failed" in reason_lower
+        )
+
+        if is_validation_failure:
+            quarantined_path = quarantine_file(
+                file_path=Path(document.file_path),
+                reason=reason,
+            )
+
+            existing_metadata = dict(document.extra_metadata or {})
+            existing_metadata["quarantine"] = {
+                "quarantined": True,
+                "quarantine_path": str(quarantined_path) if quarantined_path else None,
+                "reason": reason[:1000],
+            }
+
+            document.status = "failed"
+            document.extra_metadata = existing_metadata
+
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Document failed validation and was quarantined.",
+                    "document_id": document.id,
+                    "reason": reason[:1000],
+                    "quarantine_path": str(quarantined_path) if quarantined_path else None,
+                },
+            ) from exc
+
+        raise
 
     document.status = "indexed"
     db.add(document)

@@ -21,6 +21,7 @@ from app.schemas.chat import (
     RetrieveRequest,
     RetrieveResponse,
 )
+from app.security.llm_guardrails import guardrails
 from app.services.event_service import answer_event_question
 from app.services.poc_lookup import answer_poc_question
 from app.services.policy_service import answer_holiday_question
@@ -97,6 +98,119 @@ LEAVE_TYPE_KEYWORDS = {
         ],
     },
 }
+
+
+def get_user_role_value(current_user: User) -> str:
+    user_role = getattr(current_user, "role", "")
+
+    if hasattr(user_role, "value"):
+        return str(user_role.value)
+
+    return str(user_role)
+
+
+def get_role_allowed_access_levels(current_user: User) -> list[str]:
+    """
+    Resolve all access levels available to the logged-in user.
+
+    We intentionally pass requested_access_level=None here.
+    Actual requested access-level validation still happens in
+    resolve_rag_access_levels(...) inside retrieval.
+    """
+    return resolve_rag_access_levels(
+        user=current_user,
+        requested_access_level=None,
+    )
+
+
+def raise_security_block(security_result, status_code: int = 400) -> None:
+    raise HTTPException(
+        status_code=status_code,
+        detail=guardrails.build_block_response(security_result),
+    )
+
+
+def validate_input_security(
+    payload: RetrieveRequest | AskRequest,
+    current_user: User,
+) -> list[str]:
+    """
+    First security gate.
+
+    Blocks:
+    - prompt injection
+    - system prompt leakage attempts
+    - secret exfiltration attempts
+    - role escalation wording
+    - malicious markdown / HTML
+    - encoded attacks
+
+    Normal access-level authorization is still enforced separately by RBAC.
+    """
+    user_role = get_user_role_value(current_user)
+    allowed_access_levels = get_role_allowed_access_levels(current_user)
+
+    input_security_result = guardrails.validate_user_query(
+        query=payload.query,
+        user_role=user_role,
+        requested_access_level=None,
+        allowed_access_levels=allowed_access_levels,
+    )
+
+    if not input_security_result.allowed:
+        raise_security_block(input_security_result, status_code=400)
+
+    return allowed_access_levels
+
+
+def sanitize_retrieved_context(chunks: list[dict]) -> list[dict]:
+    """
+    Second security gate.
+
+    Removes unsafe retrieved chunks before they are sent to the LLM.
+    """
+    safe_chunks, _security_results = guardrails.sanitize_retrieved_chunks(
+        chunks=chunks,
+        text_keys=["text", "content", "page_content", "chunk_text"],
+    )
+
+    return safe_chunks
+
+
+def validate_output_security(
+    answer: str,
+    allowed_access_levels: list[str],
+    source_files: list[str],
+    require_sources: bool = True,
+) -> str:
+    """
+    Final security gate.
+
+    Validates and redacts model output before returning it to the user.
+    """
+    output_security_result = guardrails.validate_llm_output(
+        answer=answer,
+        allowed_access_levels=allowed_access_levels,
+        source_files=source_files,
+        require_sources=require_sources,
+    )
+
+    if not output_security_result.allowed:
+        raise_security_block(output_security_result, status_code=400)
+
+    return output_security_result.sanitized_text or answer
+
+
+def extract_source_file_names(sources: list[AnswerSource]) -> list[str]:
+    source_files: list[str] = []
+
+    for source in sources:
+        file_name = getattr(source, "file_name", None)
+
+        if file_name:
+            source_files.append(file_name)
+
+    return source_files
 
 
 def build_filter_response(
@@ -258,10 +372,9 @@ def search_relevant_chunks_with_access_control(
     """
     Secure retrieval.
 
-    The request body no longer decides document access.
+    The request body does not decide document access.
     The backend searches only across access levels allowed for the logged-in user.
     """
-
     combined_results: list[dict] = []
 
     for access_level in enforced_access_levels:
@@ -321,7 +434,10 @@ def retrieve_and_optionally_rerank(
     )
 
     if not payload.use_reranking:
-        return precision_filtered_results[: payload.top_k], enforced_access_levels
+        safe_results = sanitize_retrieved_context(
+            precision_filtered_results[: payload.top_k]
+        )
+        return safe_results, enforced_access_levels
 
     reranked_results = rerank_chunks(
         query=retrieval_query,
@@ -334,7 +450,11 @@ def retrieve_and_optionally_rerank(
         min_rerank_score=0.65,
     )
 
-    return quality_filtered_results[: payload.top_k], enforced_access_levels
+    safe_results = sanitize_retrieved_context(
+        quality_filtered_results[: payload.top_k]
+    )
+
+    return safe_results, enforced_access_levels
 
 
 def build_rag_sources(selected_chunks: list[dict]) -> list[AnswerSource]:
@@ -370,10 +490,19 @@ def handle_structured_route(
     db: Session,
     current_user: User,
 ) -> AskResponse | None:
+    allowed_access_levels = get_role_allowed_access_levels(current_user)
+
     if route == ChatRoute.HOLIDAYS:
         answer, results_count = answer_holiday_question(
             db=db,
             query=payload.query,
+        )
+
+        answer = validate_output_security(
+            answer=answer,
+            allowed_access_levels=allowed_access_levels,
+            source_files=[],
+            require_sources=False,
         )
 
         return AskResponse(
@@ -393,6 +522,13 @@ def handle_structured_route(
         answer, results_count = answer_event_question(
             db=db,
             query=payload.query,
+        )
+
+        answer = validate_output_security(
+            answer=answer,
+            allowed_access_levels=allowed_access_levels,
+            source_files=[],
+            require_sources=False,
         )
 
         return AskResponse(
@@ -415,6 +551,13 @@ def handle_structured_route(
             current_user=current_user,
         )
 
+        answer = validate_output_security(
+            answer=answer,
+            allowed_access_levels=allowed_access_levels,
+            source_files=[],
+            require_sources=False,
+        )
+
         return AskResponse(
             query=payload.query,
             rewritten_query=None,
@@ -430,6 +573,13 @@ def handle_structured_route(
 
     if route == ChatRoute.TAX:
         answer = answer_tax_question()
+
+        answer = validate_output_security(
+            answer=answer,
+            allowed_access_levels=allowed_access_levels,
+            source_files=[],
+            require_sources=False,
+        )
 
         return AskResponse(
             query=payload.query,
@@ -452,6 +602,11 @@ def retrieve_relevant_chunks(
     payload: RetrieveRequest,
     current_user: User = Depends(require_authenticated_user),
 ):
+    validate_input_security(
+        payload=payload,
+        current_user=current_user,
+    )
+
     retrieval_query = get_retrieval_query(payload)
 
     results, enforced_access_levels = retrieve_and_optionally_rerank(
@@ -483,6 +638,11 @@ def ask_question(
     current_user: User = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
+    allowed_access_levels = validate_input_security(
+        payload=payload,
+        current_user=current_user,
+    )
+
     route = classify_chat_route(payload.query)
 
     structured_response = handle_structured_route(
@@ -525,6 +685,19 @@ def ask_question(
         max_sources=payload.max_sources,
     )
 
+    selected_chunks = sanitize_retrieved_context(selected_chunks)
+
+    if not selected_chunks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "answer": "I cannot answer this because the retrieved context failed security validation.",
+                "blocked": True,
+                "reason": "unsafe_retrieved_context",
+                "sources": [],
+            },
+        )
+
     confidence = calculate_confidence(selected_chunks)
 
     prompt = build_rag_prompt(
@@ -542,6 +715,14 @@ def ask_question(
         ) from exc
 
     sources = build_rag_sources(selected_chunks)
+    source_files = extract_source_file_names(sources)
+
+    answer = validate_output_security(
+        answer=answer,
+        allowed_access_levels=allowed_access_levels,
+        source_files=source_files,
+        require_sources=True,
+    )
 
     return AskResponse(
         query=payload.query,
