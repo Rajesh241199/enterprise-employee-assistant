@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     max_request_body_bytes: int = 10 * 1024 * 1024
     max_upload_file_bytes: int = 10 * 1024 * 1024
 
+    app_log_dir: str = "logs"
+    app_log_file: str = "logs/app.log"
+    app_error_log_file: str = "logs/error.log"
+    app_audit_log_file: str = "logs/audit.jsonl"
+    slow_request_threshold_ms: int = 1500
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",

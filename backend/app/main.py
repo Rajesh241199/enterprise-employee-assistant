@@ -4,10 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import admin, auth, chat, departments, documents, events, poc
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
+from app.core.logging_config import setup_logging
 from app.db.session import check_postgres_connection
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.rag.retrieval import check_qdrant_connection
+
+
+setup_logging()
 
 
 def parse_cors_origins() -> list[str]:
@@ -52,6 +57,12 @@ app.add_middleware(
     login_limit=settings.login_rate_limit_requests,
     login_window_seconds=settings.login_rate_limit_window_seconds,
     max_request_body_bytes=settings.max_request_body_bytes,
+)
+
+
+app.add_middleware(
+    RequestLoggingMiddleware,
+    slow_request_threshold_ms=settings.slow_request_threshold_ms,
 )
 
 

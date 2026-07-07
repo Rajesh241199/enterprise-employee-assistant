@@ -64,3 +64,8 @@ storage/
 evals/reports/*.json
 evals/reports/*.csv
 evals/test_uploads/
+# VS Code local settings
+.vscode/
+
+# Runtime logs
+logs/

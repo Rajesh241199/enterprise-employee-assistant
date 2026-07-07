@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.access_control import resolve_rag_access_levels
@@ -22,6 +24,7 @@ from app.schemas.chat import (
     RetrieveResponse,
 )
 from app.security.llm_guardrails import guardrails
+from app.services.audit_logger import audit_event
 from app.services.event_service import answer_event_question
 from app.services.poc_lookup import answer_poc_question
 from app.services.policy_service import answer_holiday_question
@@ -109,6 +112,106 @@ def get_user_role_value(current_user: User) -> str:
     return str(user_role)
 
 
+def get_request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None)
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    if request.client:
+        return request.client.host
+
+    return "unknown"
+
+
+def get_user_agent(request: Request) -> str:
+    return request.headers.get("user-agent", "unknown")
+
+
+def build_payload_audit_metadata(
+    payload: RetrieveRequest | AskRequest,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = {
+        "query_preview": payload.query[:250],
+        "query_length": len(payload.query),
+        "top_k": payload.top_k,
+        "candidate_k": payload.candidate_k,
+        "score_threshold": payload.score_threshold,
+        "max_sources": getattr(payload, "max_sources", None),
+        "use_reranking": payload.use_reranking,
+        "use_query_rewriting": payload.use_query_rewriting,
+        "filters": {
+            "document_type": payload.document_type,
+            "policy_name": payload.policy_name,
+            "department_owner": payload.department_owner,
+            "requested_access_level": payload.access_level,
+            "chunk_type": payload.chunk_type,
+        },
+    }
+
+    if extra:
+        metadata.update(extra)
+
+    return metadata
+
+
+def serialize_security_findings(security_result) -> list[dict[str, Any]]:
+    findings = []
+
+    for finding in getattr(security_result, "findings", []) or []:
+        risk = getattr(finding, "risk", None)
+
+        if hasattr(risk, "value"):
+            risk = risk.value
+
+        findings.append(
+            {
+                "risk": risk,
+                "severity": getattr(finding, "severity", None),
+                "reason": getattr(finding, "reason", None),
+                "matched_text": getattr(finding, "matched_text", None),
+            }
+        )
+
+    return findings
+
+
+def audit_chat_event(
+    event_type: str,
+    outcome: str,
+    request: Request,
+    current_user: User,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    audit_event(
+        event_type=event_type,
+        outcome=outcome,
+        request_id=get_request_id(request),
+        actor_user_id=getattr(current_user, "id", None),
+        actor_email=getattr(current_user, "email", None),
+        actor_role=get_user_role_value(current_user),
+        client_ip=get_client_ip(request),
+        user_agent=get_user_agent(request),
+        resource_type="chat",
+        resource_id=None,
+        metadata=metadata or {},
+    )
+
+
+def safe_exception_detail(exc: Exception) -> str:
+    detail = getattr(exc, "detail", None)
+
+    if detail is not None:
+        return str(detail)[:1000]
+
+    return str(exc)[:1000]
+
+
 def get_role_allowed_access_levels(current_user: User) -> list[str]:
     """
     Resolve all access levels available to the logged-in user.
@@ -123,7 +226,34 @@ def get_role_allowed_access_levels(current_user: User) -> list[str]:
     )
 
 
-def raise_security_block(security_result, status_code: int = 400) -> None:
+def raise_security_block(
+    security_result,
+    request: Request,
+    current_user: User,
+    payload: RetrieveRequest | AskRequest | None = None,
+    status_code: int = 400,
+    stage: str = "unknown",
+) -> None:
+    metadata = {
+        "stage": stage,
+        "highest_severity": getattr(security_result, "highest_severity", None),
+        "findings": serialize_security_findings(security_result),
+    }
+
+    if payload:
+        metadata = build_payload_audit_metadata(
+            payload=payload,
+            extra=metadata,
+        )
+
+    audit_chat_event(
+        event_type="chat.security_blocked",
+        outcome="blocked",
+        request=request,
+        current_user=current_user,
+        metadata=metadata,
+    )
+
     raise HTTPException(
         status_code=status_code,
         detail=guardrails.build_block_response(security_result),
@@ -133,6 +263,7 @@ def raise_security_block(security_result, status_code: int = 400) -> None:
 def validate_input_security(
     payload: RetrieveRequest | AskRequest,
     current_user: User,
+    request: Request,
 ) -> list[str]:
     """
     First security gate.
@@ -158,7 +289,14 @@ def validate_input_security(
     )
 
     if not input_security_result.allowed:
-        raise_security_block(input_security_result, status_code=400)
+        raise_security_block(
+            security_result=input_security_result,
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            status_code=400,
+            stage="input_validation",
+        )
 
     return allowed_access_levels
 
@@ -181,6 +319,10 @@ def validate_output_security(
     answer: str,
     allowed_access_levels: list[str],
     source_files: list[str],
+    request: Request,
+    current_user: User,
+    payload: RetrieveRequest | AskRequest | None = None,
+    route: str | None = None,
     require_sources: bool = True,
 ) -> str:
     """
@@ -196,7 +338,34 @@ def validate_output_security(
     )
 
     if not output_security_result.allowed:
-        raise_security_block(output_security_result, status_code=400)
+        metadata_extra = {
+            "stage": "output_validation",
+            "route": route,
+            "source_files": source_files,
+            "highest_severity": getattr(output_security_result, "highest_severity", None),
+            "findings": serialize_security_findings(output_security_result),
+        }
+
+        if payload:
+            metadata = build_payload_audit_metadata(
+                payload=payload,
+                extra=metadata_extra,
+            )
+        else:
+            metadata = metadata_extra
+
+        audit_chat_event(
+            event_type="chat.security_blocked",
+            outcome="blocked",
+            request=request,
+            current_user=current_user,
+            metadata=metadata,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=guardrails.build_block_response(output_security_result),
+        )
 
     return output_security_result.sanitized_text or answer
 
@@ -487,6 +656,7 @@ def build_rag_sources(selected_chunks: list[dict]) -> list[AnswerSource]:
 def handle_structured_route(
     route: ChatRoute,
     payload: AskRequest,
+    request: Request,
     db: Session,
     current_user: User,
 ) -> AskResponse | None:
@@ -502,6 +672,10 @@ def handle_structured_route(
             answer=answer,
             allowed_access_levels=allowed_access_levels,
             source_files=[],
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            route=route.value,
             require_sources=False,
         )
 
@@ -528,6 +702,10 @@ def handle_structured_route(
             answer=answer,
             allowed_access_levels=allowed_access_levels,
             source_files=[],
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            route=route.value,
             require_sources=False,
         )
 
@@ -555,6 +733,10 @@ def handle_structured_route(
             answer=answer,
             allowed_access_levels=allowed_access_levels,
             source_files=[],
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            route=route.value,
             require_sources=False,
         )
 
@@ -578,6 +760,10 @@ def handle_structured_route(
             answer=answer,
             allowed_access_levels=allowed_access_levels,
             source_files=[],
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            route=route.value,
             require_sources=False,
         )
 
@@ -600,142 +786,292 @@ def handle_structured_route(
 @router.post("/chat/retrieve", response_model=RetrieveResponse)
 def retrieve_relevant_chunks(
     payload: RetrieveRequest,
+    request: Request,
     current_user: User = Depends(require_authenticated_user),
 ):
-    validate_input_security(
-        payload=payload,
-        current_user=current_user,
-    )
-
-    retrieval_query = get_retrieval_query(payload)
-
-    results, enforced_access_levels = retrieve_and_optionally_rerank(
-        payload=payload,
-        retrieval_query=retrieval_query,
-        current_user=current_user,
-    )
-
-    return RetrieveResponse(
-        query=payload.query,
-        rewritten_query=retrieval_query,
-        top_k=payload.top_k,
-        candidate_k=payload.candidate_k,
-        score_threshold=payload.score_threshold,
-        use_reranking=payload.use_reranking,
-        use_query_rewriting=payload.use_query_rewriting,
-        filters=build_filter_response(
+    try:
+        validate_input_security(
             payload=payload,
-            enforced_access_levels=enforced_access_levels,
-        ),
-        results_count=len(results),
-        results=results,
-    )
+            current_user=current_user,
+            request=request,
+        )
 
+        retrieval_query = get_retrieval_query(payload)
 
-@router.post("/chat/ask", response_model=AskResponse)
-def ask_question(
-    payload: AskRequest,
-    current_user: User = Depends(require_authenticated_user),
-    db: Session = Depends(get_db),
-):
-    allowed_access_levels = validate_input_security(
-        payload=payload,
-        current_user=current_user,
-    )
+        results, enforced_access_levels = retrieve_and_optionally_rerank(
+            payload=payload,
+            retrieval_query=retrieval_query,
+            current_user=current_user,
+        )
 
-    route = classify_chat_route(payload.query)
+        audit_chat_event(
+            event_type="chat.retrieve_success",
+            outcome="success",
+            request=request,
+            current_user=current_user,
+            metadata=build_payload_audit_metadata(
+                payload=payload,
+                extra={
+                    "rewritten_query_preview": retrieval_query[:250],
+                    "results_count": len(results),
+                    "enforced_access_levels": enforced_access_levels,
+                },
+            ),
+        )
 
-    structured_response = handle_structured_route(
-        route=route,
-        payload=payload,
-        db=db,
-        current_user=current_user,
-    )
-
-    if structured_response:
-        return structured_response
-
-    retrieval_query = get_retrieval_query(payload)
-
-    retrieved_chunks, enforced_access_levels = retrieve_and_optionally_rerank(
-        payload=payload,
-        retrieval_query=retrieval_query,
-        current_user=current_user,
-    )
-
-    if not retrieved_chunks:
-        return AskResponse(
+        return RetrieveResponse(
             query=payload.query,
             rewritten_query=retrieval_query,
-            route=ChatRoute.POLICY_RAG.value,
-            answer="I could not find this information in the available company documents.",
-            confidence="low",
+            top_k=payload.top_k,
+            candidate_k=payload.candidate_k,
+            score_threshold=payload.score_threshold,
             use_reranking=payload.use_reranking,
             use_query_rewriting=payload.use_query_rewriting,
             filters=build_filter_response(
                 payload=payload,
                 enforced_access_levels=enforced_access_levels,
             ),
-            results_count=0,
-            sources=[],
+            results_count=len(results),
+            results=results,
         )
 
-    selected_chunks = select_best_sources(
-        retrieved_chunks=retrieved_chunks,
-        max_sources=payload.max_sources,
-    )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            audit_chat_event(
+                event_type="chat.rbac_blocked",
+                outcome="blocked",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "status_code": exc.status_code,
+                        "reason": safe_exception_detail(exc),
+                        "operation": "retrieve",
+                    },
+                ),
+            )
 
-    selected_chunks = sanitize_retrieved_context(selected_chunks)
+        raise
 
-    if not selected_chunks:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "answer": "I cannot answer this because the retrieved context failed security validation.",
-                "blocked": True,
-                "reason": "unsafe_retrieved_context",
-                "sources": [],
-            },
-        )
 
-    confidence = calculate_confidence(selected_chunks)
-
-    prompt = build_rag_prompt(
-        question=payload.query,
-        retrieved_chunks=selected_chunks,
-    )
-
+@router.post("/chat/ask", response_model=AskResponse)
+def ask_question(
+    payload: AskRequest,
+    request: Request,
+    current_user: User = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     try:
-        answer = generate_answer_with_ollama(prompt)
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate answer with Ollama: {str(exc)}",
-        ) from exc
-
-    sources = build_rag_sources(selected_chunks)
-    source_files = extract_source_file_names(sources)
-
-    answer = validate_output_security(
-        answer=answer,
-        allowed_access_levels=allowed_access_levels,
-        source_files=source_files,
-        require_sources=True,
-    )
-
-    return AskResponse(
-        query=payload.query,
-        rewritten_query=retrieval_query,
-        route=ChatRoute.POLICY_RAG.value,
-        answer=answer,
-        confidence=confidence,
-        use_reranking=payload.use_reranking,
-        use_query_rewriting=payload.use_query_rewriting,
-        filters=build_filter_response(
+        allowed_access_levels = validate_input_security(
             payload=payload,
-            enforced_access_levels=enforced_access_levels,
-        ),
-        results_count=len(selected_chunks),
-        sources=sources,
-    )
+            current_user=current_user,
+            request=request,
+        )
+
+        route = classify_chat_route(payload.query)
+
+        structured_response = handle_structured_route(
+            route=route,
+            payload=payload,
+            request=request,
+            db=db,
+            current_user=current_user,
+        )
+
+        if structured_response:
+            audit_chat_event(
+                event_type="chat.ask_success",
+                outcome="success",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "route": structured_response.route,
+                        "confidence": structured_response.confidence,
+                        "results_count": structured_response.results_count,
+                        "source_count": len(structured_response.sources),
+                        "structured_route": True,
+                    },
+                ),
+            )
+
+            return structured_response
+
+        retrieval_query = get_retrieval_query(payload)
+
+        retrieved_chunks, enforced_access_levels = retrieve_and_optionally_rerank(
+            payload=payload,
+            retrieval_query=retrieval_query,
+            current_user=current_user,
+        )
+
+        if not retrieved_chunks:
+            audit_chat_event(
+                event_type="chat.no_results",
+                outcome="no_results",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "route": ChatRoute.POLICY_RAG.value,
+                        "rewritten_query_preview": retrieval_query[:250],
+                        "enforced_access_levels": enforced_access_levels,
+                        "results_count": 0,
+                    },
+                ),
+            )
+
+            return AskResponse(
+                query=payload.query,
+                rewritten_query=retrieval_query,
+                route=ChatRoute.POLICY_RAG.value,
+                answer="I could not find this information in the available company documents.",
+                confidence="low",
+                use_reranking=payload.use_reranking,
+                use_query_rewriting=payload.use_query_rewriting,
+                filters=build_filter_response(
+                    payload=payload,
+                    enforced_access_levels=enforced_access_levels,
+                ),
+                results_count=0,
+                sources=[],
+            )
+
+        selected_chunks = select_best_sources(
+            retrieved_chunks=retrieved_chunks,
+            max_sources=payload.max_sources,
+        )
+
+        selected_chunks = sanitize_retrieved_context(selected_chunks)
+
+        if not selected_chunks:
+            audit_chat_event(
+                event_type="chat.security_blocked",
+                outcome="blocked",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "stage": "retrieved_context_validation",
+                        "reason": "unsafe_retrieved_context",
+                        "route": ChatRoute.POLICY_RAG.value,
+                        "enforced_access_levels": enforced_access_levels,
+                    },
+                ),
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "answer": "I cannot answer this because the retrieved context failed security validation.",
+                    "blocked": True,
+                    "reason": "unsafe_retrieved_context",
+                    "sources": [],
+                },
+            )
+
+        confidence = calculate_confidence(selected_chunks)
+
+        prompt = build_rag_prompt(
+            question=payload.query,
+            retrieved_chunks=selected_chunks,
+        )
+
+        try:
+            answer = generate_answer_with_ollama(prompt)
+
+        except Exception as exc:
+            audit_chat_event(
+                event_type="chat.llm_generation_failed",
+                outcome="failure",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "route": ChatRoute.POLICY_RAG.value,
+                        "error_type": exc.__class__.__name__,
+                        "reason": str(exc)[:1000],
+                        "selected_source_count": len(selected_chunks),
+                    },
+                ),
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate answer with Ollama: {str(exc)}",
+            ) from exc
+
+        sources = build_rag_sources(selected_chunks)
+        source_files = extract_source_file_names(sources)
+
+        answer = validate_output_security(
+            answer=answer,
+            allowed_access_levels=allowed_access_levels,
+            source_files=source_files,
+            request=request,
+            current_user=current_user,
+            payload=payload,
+            route=ChatRoute.POLICY_RAG.value,
+            require_sources=True,
+        )
+
+        response = AskResponse(
+            query=payload.query,
+            rewritten_query=retrieval_query,
+            route=ChatRoute.POLICY_RAG.value,
+            answer=answer,
+            confidence=confidence,
+            use_reranking=payload.use_reranking,
+            use_query_rewriting=payload.use_query_rewriting,
+            filters=build_filter_response(
+                payload=payload,
+                enforced_access_levels=enforced_access_levels,
+            ),
+            results_count=len(selected_chunks),
+            sources=sources,
+        )
+
+        audit_chat_event(
+            event_type="chat.ask_success",
+            outcome="success",
+            request=request,
+            current_user=current_user,
+            metadata=build_payload_audit_metadata(
+                payload=payload,
+                extra={
+                    "route": response.route,
+                    "confidence": response.confidence,
+                    "results_count": response.results_count,
+                    "source_count": len(response.sources),
+                    "source_files": source_files,
+                    "enforced_access_levels": enforced_access_levels,
+                    "structured_route": False,
+                },
+            ),
+        )
+
+        return response
+
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            audit_chat_event(
+                event_type="chat.rbac_blocked",
+                outcome="blocked",
+                request=request,
+                current_user=current_user,
+                metadata=build_payload_audit_metadata(
+                    payload=payload,
+                    extra={
+                        "status_code": exc.status_code,
+                        "reason": safe_exception_detail(exc),
+                        "operation": "ask",
+                    },
+                ),
+            )
+
+        raise

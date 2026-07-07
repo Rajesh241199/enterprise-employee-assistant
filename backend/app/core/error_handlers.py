@@ -1,9 +1,14 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
+
+
+logger = logging.getLogger("app.errors")
 
 
 def get_request_id(request: Request) -> str | None:
@@ -13,6 +18,19 @@ def get_request_id(request: Request) -> str | None:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        if exc.status_code >= 500:
+            logger.error(
+                "HTTP exception occurred.",
+                extra={
+                    "event_name": "http.exception",
+                    "request_id": get_request_id(request),
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": exc.status_code,
+                    "error_type": exc.__class__.__name__,
+                },
+            )
+
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -26,6 +44,18 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ):
+        logger.warning(
+            "Request validation failed.",
+            extra={
+                "event_name": "request.validation_failed",
+                "request_id": get_request_id(request),
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 422,
+                "error_type": exc.__class__.__name__,
+            },
+        )
+
         content = {
             "detail": "Request validation failed.",
             "request_id": get_request_id(request),
@@ -41,6 +71,18 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception(
+            "Unhandled application exception.",
+            extra={
+                "event_name": "app.unhandled_exception",
+                "request_id": get_request_id(request),
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 500,
+                "error_type": exc.__class__.__name__,
+            },
+        )
+
         content = {
             "detail": "Internal server error.",
             "request_id": get_request_id(request),
