@@ -1,3 +1,11 @@
 
 # VS Code local settings
 .vscode/
+
+# Backend runtime/generated files
+logs/
+storage/
+evals/reports/*.json
+evals/reports/*.csv
+evals/test_uploads/
+.vscode/
