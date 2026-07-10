@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: internal-employee-assistant-backend:local
+    container_name: internal_employee_assistant_backend_local
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.docker
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_local_logs:/app/logs
+      - backend_local_uploads:/app/storage/uploads
+      - backend_local_quarantine:/app/storage/quarantine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:8000
+    image: internal-employee-assistant-frontend:local
+    container_name: internal_employee_assistant_frontend_local
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_local_logs:
+  backend_local_uploads:
+  backend_local_quarantine:
