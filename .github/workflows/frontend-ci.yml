@@ -1,0 +1,58 @@
+name: Frontend CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  frontend-build-validation:
+    name: Frontend Build Validation
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    env:
+      VITE_API_BASE_URL: http://127.0.0.1:8000
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          test -d dist
+          test -f dist/index.html
+
+      - name: Block local environment files from being tracked
+        run: |
+          if git ls-files | grep -E '^frontend/\.env$|^frontend/\.env\.local$'; then
+            echo "Tracked local frontend env file found. Remove it from Git tracking."
+            exit 1
+          fi
+
+      - name: Frontend CI summary
+        run: |
+          echo "Frontend dependencies installed successfully."
+          echo "Frontend production build completed successfully."
+          echo "Frontend dist output verified."
+          echo "Local frontend env files are not tracked."
