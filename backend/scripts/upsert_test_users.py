@@ -120,7 +120,6 @@ def get_or_create_department(db, department_name: str):
         return department
 
     department = Department()
-
     setattr(department, department_name_column, department_name)
 
     if model_has_column(Department, "description"):
@@ -184,15 +183,18 @@ def upsert_user(db, user_data: dict) -> User:
     set_if_column_exists(user, "job_title", user_data["designation"])
     set_if_column_exists(user, "is_active", True)
 
+    # Set password before department because department creation may call db.flush().
+    # If db.flush() happens before password is set, PostgreSQL rejects the user row
+    # because hashed_password is NOT NULL.
+    set_password(
+        user=user,
+        plain_password=user_data["password"],
+    )
+
     set_department(
         db=db,
         user=user,
         department_name=user_data["department_name"],
-    )
-
-    set_password(
-        user=user,
-        plain_password=user_data["password"],
     )
 
     return user

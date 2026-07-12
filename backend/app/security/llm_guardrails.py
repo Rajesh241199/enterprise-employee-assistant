@@ -593,14 +593,42 @@ class EnterpriseLLMGuardrails:
 
         allowed_levels = set(allowed_access_levels or [])
 
+        normalized_lower = normalized.lower()
+
         for restricted_level in self.RESTRICTED_ACCESS_LEVELS:
-            if restricted_level in normalized.lower() and restricted_level not in allowed_levels:
+            # "confidential" is common policy language, for example:
+            # "protect confidential company information".
+            # Treat it as an access-level leak only when it appears as
+            # explicit metadata/classification, not as ordinary prose.
+            if restricted_level == "confidential":
+                references_restricted_level = bool(
+                    re.search(
+                        r"\b(?:access[_\s-]?level|classification)"
+                        r"\s*[:=]?\s*['\"]?confidential\b"
+                        r"|\bconfidential_only\b",
+                        normalized_lower,
+                        flags=re.IGNORECASE,
+                    )
+                )
+            else:
+                references_restricted_level = bool(
+                    re.search(
+                        rf"\b{re.escape(restricted_level)}\b",
+                        normalized_lower,
+                        flags=re.IGNORECASE,
+                    )
+                )
+
+            if (
+                references_restricted_level
+                and restricted_level not in allowed_levels
+            ):
                 findings.append(
                     SecurityFinding(
                         risk=SecurityRisk.RESTRICTED_DATA_LEAKAGE,
                         severity="critical",
                         reason=(
-                            f"Output references restricted access level "
+                            "Output references restricted access level "
                             f"'{restricted_level}' not allowed for the user."
                         ),
                         matched_text=restricted_level,

@@ -9,3 +9,7 @@ evals/reports/*.json
 evals/reports/*.csv
 evals/test_uploads/
 .vscode/
+
+# Local deployment secrets and test files
+infra/aws-ec2/.env.ec2
+remote_work_policy_test.txt
