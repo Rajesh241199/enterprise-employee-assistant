@@ -26,6 +26,36 @@ const exampleQuestions = [
   "What is the expense reimbursement policy?",
 ];
 
+function createMessageId(): string {
+  const cryptoApi = globalThis.crypto;
+
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    cryptoApi.getRandomValues(bytes);
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    const hex = Array.from(bytes, (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+
+    return [
+      hex.slice(0, 8),
+      hex.slice(8, 12),
+      hex.slice(12, 16),
+      hex.slice(16, 20),
+      hex.slice(20),
+    ].join("-");
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function getRoleLabel(role: string) {
   const labels: Record<string, string> = {
     employee: "Employee",
@@ -170,7 +200,9 @@ function SourceCard({ source }: { source: ChatSource }) {
     <div className="source-card">
       <div className="source-header">
         <FileText size={16} />
-        <strong>{source.policy_name || source.file_name || "Source document"}</strong>
+        <strong>
+          {source.policy_name || source.file_name || "Source document"}
+        </strong>
       </div>
 
       <div className="source-meta">
@@ -190,16 +222,19 @@ export default function ChatPage() {
 
   const [query, setQuery] = useState("");
   const [isAsking, setIsAsking] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
-      id: crypto.randomUUID(),
+      id: createMessageId(),
       role: "assistant",
       content:
         "Hello! Ask me about employee benefits, leave policy, reimbursement, compensation, remote work, or IT security. I will answer only from indexed company policy documents.",
     },
   ]);
 
-  const roleLabel = useMemo(() => getRoleLabel(user?.role ?? ""), [user?.role]);
+  const roleLabel = useMemo(
+    () => getRoleLabel(user?.role ?? ""),
+    [user?.role]
+  );
 
   async function submitQuestion(questionText?: string) {
     const finalQuery = (questionText ?? query).trim();
@@ -209,7 +244,7 @@ export default function ChatPage() {
     }
 
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createMessageId(),
       role: "user",
       content: finalQuery,
     };
@@ -222,7 +257,7 @@ export default function ChatPage() {
       const response = await askChat(buildChatPayload(finalQuery));
 
       const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createMessageId(),
         role: "assistant",
         content: response.answer,
         response,
@@ -233,7 +268,7 @@ export default function ChatPage() {
       const errorType = getErrorType(error);
 
       const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createMessageId(),
         role: "assistant",
         content: getApiErrorMessage(error),
         errorType,
@@ -255,6 +290,7 @@ export default function ChatPage() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <ShieldCheck size={24} />
+
           <div>
             <strong>Internal Employee Assistant</strong>
             <span>Policy Knowledge Portal</span>
@@ -277,6 +313,7 @@ export default function ChatPage() {
 
         <div className="access-card">
           <Lock size={18} />
+
           <div>
             <strong>Role access</strong>
             <span>{roleLabel}</span>
@@ -287,6 +324,7 @@ export default function ChatPage() {
           <div className="avatar">
             <UserRound size={20} />
           </div>
+
           <div>
             <strong>{user?.full_name ?? "User"}</strong>
             <span>{user?.email}</span>
@@ -298,9 +336,10 @@ export default function ChatPage() {
         <header className="topbar">
           <div>
             <h1>Internal Employee Assistant</h1>
+
             <p>
-              Ask policy questions. Answers are grounded in indexed documents and
-              filtered by your role.
+              Ask policy questions. Answers are grounded in indexed documents
+              and filtered by your role.
             </p>
           </div>
 
@@ -345,15 +384,20 @@ export default function ChatPage() {
                       <>
                         <div className="answer-meta">
                           {message.response.confidence && (
-                            <span>Confidence: {message.response.confidence}</span>
+                            <span>
+                              Confidence: {message.response.confidence}
+                            </span>
                           )}
 
                           {message.response.route && (
                             <span>Route: {message.response.route}</span>
                           )}
 
-                          {typeof message.response.results_count === "number" && (
-                            <span>Sources: {message.response.results_count}</span>
+                          {typeof message.response.results_count ===
+                            "number" && (
+                            <span>
+                              Sources: {message.response.results_count}
+                            </span>
                           )}
                         </div>
 
@@ -369,12 +413,14 @@ export default function ChatPage() {
                         {message.response.sources &&
                           message.response.sources.length > 0 && (
                             <div className="sources-grid">
-                              {message.response.sources.map((source, index) => (
-                                <SourceCard
-                                  key={`${source.document_id}-${source.chunk_index}-${index}`}
-                                  source={source}
-                                />
-                              ))}
+                              {message.response.sources.map(
+                                (source, index) => (
+                                  <SourceCard
+                                    key={`${source.document_id}-${source.chunk_index}-${index}`}
+                                    source={source}
+                                  />
+                                )
+                              )}
                             </div>
                           )}
                       </>
@@ -388,8 +434,11 @@ export default function ChatPage() {
                   <div className="message-avatar">
                     <Sparkles size={18} />
                   </div>
+
                   <div className="message-body">
-                    <p>Searching policy documents and generating answer...</p>
+                    <p>
+                      Searching policy documents and generating answer...
+                    </p>
                   </div>
                 </article>
               )}
@@ -452,7 +501,9 @@ export default function ChatPage() {
 
                 <button
                   type="button"
-                  onClick={() => submitQuestion("What is the compensation policy?")}
+                  onClick={() =>
+                    submitQuestion("What is the compensation policy?")
+                  }
                   disabled={isAsking}
                 >
                   Test employee HR-only block
