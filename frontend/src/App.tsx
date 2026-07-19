@@ -1,20 +1,35 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
+
 import { useAuth } from "./context/AuthContext";
+
 import LoginPage from "./pages/LoginPage";
 import ChatPage from "./pages/ChatPage";
 import AdminDocumentsPage from "./pages/AdminDocumentsPage";
+import TaxCalculatorPage from "./pages/TaxCalculatorPage";
+
 
 type RouteProps = {
   children: React.ReactNode;
 };
 
+
 function ProtectedRoute({ children }: RouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+  } = useAuth();
 
   if (isLoading) {
     return (
       <div className="screen-center">
-        <div className="loading-card">Loading session...</div>
+        <div className="loading-card">
+          Loading session...
+        </div>
       </div>
     );
   }
@@ -26,13 +41,19 @@ function ProtectedRoute({ children }: RouteProps) {
   return <>{children}</>;
 }
 
+
 function PublicRoute({ children }: RouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+  } = useAuth();
 
   if (isLoading) {
     return (
       <div className="screen-center">
-        <div className="loading-card">Loading session...</div>
+        <div className="loading-card">
+          Loading session...
+        </div>
       </div>
     );
   }
@@ -43,6 +64,7 @@ function PublicRoute({ children }: RouteProps) {
 
   return <>{children}</>;
 }
+
 
 export default function App() {
   return (
@@ -67,6 +89,15 @@ export default function App() {
         />
 
         <Route
+          path="/tax"
+          element={
+            <ProtectedRoute>
+              <TaxCalculatorPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/admin/documents"
           element={
             <ProtectedRoute>
@@ -75,8 +106,15 @@ export default function App() {
           }
         />
 
-        <Route path="/" element={<Navigate to="/chat" replace />} />
-        <Route path="*" element={<Navigate to="/chat" replace />} />
+        <Route
+          path="/"
+          element={<Navigate to="/chat" replace />}
+        />
+
+        <Route
+          path="*"
+          element={<Navigate to="/chat" replace />}
+        />
       </Routes>
     </BrowserRouter>
   );

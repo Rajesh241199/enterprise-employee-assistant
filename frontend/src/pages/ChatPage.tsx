@@ -1,6 +1,7 @@
 import { AxiosError } from "axios";
 import {
   AlertTriangle,
+  Calculator,
   FileText,
   Lock,
   LogOut,
@@ -13,10 +14,16 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
 import { askChat } from "../api/chat";
 import { getApiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import type { ChatAskRequest, ChatMessage, ChatSource } from "../types/chat";
+import type {
+  ChatAskRequest,
+  ChatMessage,
+  ChatSource,
+} from "../types/chat";
+
 
 const exampleQuestions = [
   "What benefits are available for employees?",
@@ -24,7 +31,9 @@ const exampleQuestions = [
   "What is the compensation policy?",
   "What is the IT security policy?",
   "What is the expense reimbursement policy?",
+  "As per my salary, which tax regime suits me?",
 ];
+
 
 function createMessageId(): string {
   const cryptoApi = globalThis.crypto;
@@ -35,6 +44,7 @@ function createMessageId(): string {
 
   if (typeof cryptoApi?.getRandomValues === "function") {
     const bytes = new Uint8Array(16);
+
     cryptoApi.getRandomValues(bytes);
 
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -53,8 +63,11 @@ function createMessageId(): string {
     ].join("-");
   }
 
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`;
 }
+
 
 function getRoleLabel(role: string) {
   const labels: Record<string, string> = {
@@ -68,14 +81,40 @@ function getRoleLabel(role: string) {
   return labels[role] ?? role;
 }
 
+
 function isAdminRole(role?: string) {
-  return ["hr_admin", "finance_admin", "it_admin", "super_admin"].includes(
-    role ?? ""
-  );
+  return [
+    "hr_admin",
+    "finance_admin",
+    "it_admin",
+    "super_admin",
+  ].includes(role ?? "");
 }
 
-function getDefaultFilters(query: string): Partial<ChatAskRequest> {
+
+function getDefaultFilters(
+  query: string
+): Partial<ChatAskRequest> {
   const lowerQuery = query.toLowerCase();
+
+  const isTaxQuestion =
+    lowerQuery.includes("tax") ||
+    lowerQuery.includes("tax regime") ||
+    lowerQuery.includes("old regime") ||
+    lowerQuery.includes("new regime") ||
+    lowerQuery.includes("income tax") ||
+    lowerQuery.includes("80c") ||
+    lowerQuery.includes("80d") ||
+    lowerQuery.includes("salary tax");
+
+  if (isTaxQuestion) {
+    return {
+      document_type: null,
+      policy_name: null,
+      department_owner: null,
+      access_level: null,
+    };
+  }
 
   if (lowerQuery.includes("benefit")) {
     return {
@@ -86,7 +125,10 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
     };
   }
 
-  if (lowerQuery.includes("leave") || lowerQuery.includes("holiday")) {
+  if (
+    lowerQuery.includes("leave") ||
+    lowerQuery.includes("holiday")
+  ) {
     return {
       document_type: "leave_policy",
       policy_name: "Leave Policy 2026",
@@ -95,7 +137,10 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
     };
   }
 
-  if (lowerQuery.includes("remote work") || lowerQuery.includes("remote")) {
+  if (
+    lowerQuery.includes("remote work") ||
+    lowerQuery.includes("remote")
+  ) {
     return {
       document_type: "test_policy",
       policy_name: "Remote Work Policy 2026",
@@ -104,7 +149,10 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
     };
   }
 
-  if (lowerQuery.includes("compensation") || lowerQuery.includes("salary")) {
+  if (
+    lowerQuery.includes("compensation") ||
+    lowerQuery.includes("salary")
+  ) {
     return {
       document_type: "compensation_policy",
       policy_name: "Compensation Policy 2026",
@@ -113,7 +161,10 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
     };
   }
 
-  if (lowerQuery.includes("security") || lowerQuery.includes("access")) {
+  if (
+    lowerQuery.includes("security") ||
+    lowerQuery.includes("access")
+  ) {
     return {
       document_type: "it_security_policy",
       policy_name: "IT Security and Access Policy 2026",
@@ -129,7 +180,8 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
   ) {
     return {
       document_type: "reimbursement_policy",
-      policy_name: "Employee Expense Reimbursement Policy 2026",
+      policy_name:
+        "Employee Expense Reimbursement Policy 2026",
       department_owner: "Finance",
       access_level: "finance_only",
     };
@@ -143,7 +195,10 @@ function getDefaultFilters(query: string): Partial<ChatAskRequest> {
   };
 }
 
-function buildChatPayload(query: string): ChatAskRequest {
+
+function buildChatPayload(
+  query: string
+): ChatAskRequest {
   const filters = getDefaultFilters(query);
 
   return {
@@ -156,13 +211,17 @@ function buildChatPayload(query: string): ChatAskRequest {
     use_query_rewriting: true,
     document_type: filters.document_type ?? null,
     policy_name: filters.policy_name ?? null,
-    department_owner: filters.department_owner ?? null,
+    department_owner:
+      filters.department_owner ?? null,
     access_level: filters.access_level ?? null,
     chunk_type: null,
   };
 }
 
-function getErrorType(error: unknown): ChatMessage["errorType"] {
+
+function getErrorType(
+  error: unknown
+): ChatMessage["errorType"] {
   if (error instanceof AxiosError) {
     const status = error.response?.status;
     const detail = error.response?.data?.detail;
@@ -171,11 +230,18 @@ function getErrorType(error: unknown): ChatMessage["errorType"] {
       return "rbac";
     }
 
-    if (status === 400 && typeof detail === "object" && detail?.blocked) {
+    if (
+      status === 400 &&
+      typeof detail === "object" &&
+      detail?.blocked
+    ) {
       return "security";
     }
 
-    if (status === 400 && typeof detail?.answer === "string") {
+    if (
+      status === 400 &&
+      typeof detail?.answer === "string"
+    ) {
       return "security";
     }
   }
@@ -183,7 +249,10 @@ function getErrorType(error: unknown): ChatMessage["errorType"] {
   return "general";
 }
 
-function getErrorTitle(errorType?: ChatMessage["errorType"]) {
+
+function getErrorTitle(
+  errorType?: ChatMessage["errorType"]
+) {
   if (errorType === "rbac") {
     return "Access restricted";
   }
@@ -195,49 +264,79 @@ function getErrorTitle(errorType?: ChatMessage["errorType"]) {
   return "Request failed";
 }
 
-function SourceCard({ source }: { source: ChatSource }) {
+
+function SourceCard({
+  source,
+}: {
+  source: ChatSource;
+}) {
   return (
     <div className="source-card">
       <div className="source-header">
         <FileText size={16} />
+
         <strong>
-          {source.policy_name || source.file_name || "Source document"}
+          {source.policy_name ||
+            source.file_name ||
+            "Source document"}
         </strong>
       </div>
 
       <div className="source-meta">
-        {source.document_type && <span>{source.document_type}</span>}
-        {source.department_owner && <span>{source.department_owner}</span>}
-        {source.access_level && <span>{source.access_level}</span>}
-        {source.page_number && <span>Page {source.page_number}</span>}
+        {source.document_type && (
+          <span>{source.document_type}</span>
+        )}
+
+        {source.department_owner && (
+          <span>{source.department_owner}</span>
+        )}
+
+        {source.access_level && (
+          <span>{source.access_level}</span>
+        )}
+
+        {source.page_number && (
+          <span>Page {source.page_number}</span>
+        )}
       </div>
 
-      {source.text_preview && <p>{source.text_preview}</p>}
+      {source.text_preview && (
+        <p>{source.text_preview}</p>
+      )}
     </div>
   );
 }
+
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
 
   const [query, setQuery] = useState("");
-  const [isAsking, setIsAsking] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: createMessageId(),
-      role: "assistant",
-      content:
-        "Hello! Ask me about employee benefits, leave policy, reimbursement, compensation, remote work, or IT security. I will answer only from indexed company policy documents.",
-    },
-  ]);
+  const [isAsking, setIsAsking] =
+    useState(false);
+
+  const [messages, setMessages] =
+    useState<ChatMessage[]>(() => [
+      {
+        id: createMessageId(),
+        role: "assistant",
+        content:
+          "Hello! Ask me about employee benefits, leave policy, reimbursement, compensation, remote work, IT security, holidays, events, points of contact, or tax-regime comparison. Policy answers are grounded in indexed company documents and filtered by your role.",
+      },
+    ]);
 
   const roleLabel = useMemo(
     () => getRoleLabel(user?.role ?? ""),
     [user?.role]
   );
 
-  async function submitQuestion(questionText?: string) {
-    const finalQuery = (questionText ?? query).trim();
+
+  async function submitQuestion(
+    questionText?: string
+  ) {
+    const finalQuery = (
+      questionText ?? query
+    ).trim();
 
     if (!finalQuery || isAsking) {
       return;
@@ -249,12 +348,18 @@ export default function ChatPage() {
       content: finalQuery,
     };
 
-    setMessages((current) => [...current, userMessage]);
+    setMessages((current) => [
+      ...current,
+      userMessage,
+    ]);
+
     setQuery("");
     setIsAsking(true);
 
     try {
-      const response = await askChat(buildChatPayload(finalQuery));
+      const response = await askChat(
+        buildChatPayload(finalQuery)
+      );
 
       const assistantMessage: ChatMessage = {
         id: createMessageId(),
@@ -263,7 +368,10 @@ export default function ChatPage() {
         response,
       };
 
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => [
+        ...current,
+        assistantMessage,
+      ]);
     } catch (error) {
       const errorType = getErrorType(error);
 
@@ -274,16 +382,23 @@ export default function ChatPage() {
         errorType,
       };
 
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => [
+        ...current,
+        assistantMessage,
+      ]);
     } finally {
       setIsAsking(false);
     }
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+
+  function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
     submitQuestion();
   }
+
 
   return (
     <main className="app-shell">
@@ -292,7 +407,10 @@ export default function ChatPage() {
           <ShieldCheck size={24} />
 
           <div>
-            <strong>Internal Employee Assistant</strong>
+            <strong>
+              Internal Employee Assistant
+            </strong>
+
             <span>Policy Knowledge Portal</span>
           </div>
         </div>
@@ -301,6 +419,11 @@ export default function ChatPage() {
           <Link className="active" to="/chat">
             <MessageSquareText size={18} />
             Chat
+          </Link>
+
+          <Link to="/tax">
+            <Calculator size={18} />
+            Tax Calculator
           </Link>
 
           {isAdminRole(user?.role) && (
@@ -326,7 +449,10 @@ export default function ChatPage() {
           </div>
 
           <div>
-            <strong>{user?.full_name ?? "User"}</strong>
+            <strong>
+              {user?.full_name ?? "User"}
+            </strong>
+
             <span>{user?.email}</span>
           </div>
         </div>
@@ -335,15 +461,21 @@ export default function ChatPage() {
       <section className="main-panel chat-panel">
         <header className="topbar">
           <div>
-            <h1>Internal Employee Assistant</h1>
+            <h1>
+              Internal Employee Assistant
+            </h1>
 
             <p>
-              Ask policy questions. Answers are grounded in indexed documents
-              and filtered by your role.
+              Ask policy questions, access
+              structured employee information, or
+              compare tax regimes.
             </p>
           </div>
 
-          <button className="secondary-button" onClick={logout}>
+          <button
+            className="secondary-button"
+            onClick={logout}
+          >
             <LogOut size={18} />
             Logout
           </button>
@@ -355,16 +487,22 @@ export default function ChatPage() {
               {messages.map((message) => (
                 <article
                   key={message.id}
-                  className={`message ${message.role} ${
-                    message.errorType ? "error-message" : ""
+                  className={`message ${
+                    message.role
+                  } ${
+                    message.errorType
+                      ? "error-message"
+                      : ""
                   }`}
                 >
                   <div className="message-avatar">
                     {message.role === "user" ? (
                       <UserRound size={18} />
-                    ) : message.errorType === "security" ? (
+                    ) : message.errorType ===
+                      "security" ? (
                       <ShieldAlert size={18} />
-                    ) : message.errorType === "rbac" ? (
+                    ) : message.errorType ===
+                      "rbac" ? (
                       <Lock size={18} />
                     ) : (
                       <Sparkles size={18} />
@@ -374,7 +512,9 @@ export default function ChatPage() {
                   <div className="message-body">
                     {message.errorType && (
                       <strong className="error-title">
-                        {getErrorTitle(message.errorType)}
+                        {getErrorTitle(
+                          message.errorType
+                        )}
                       </strong>
                     )}
 
@@ -383,25 +523,53 @@ export default function ChatPage() {
                     {message.response && (
                       <>
                         <div className="answer-meta">
-                          {message.response.confidence && (
+                          {message.response
+                            .confidence && (
                             <span>
-                              Confidence: {message.response.confidence}
+                              Confidence:{" "}
+                              {
+                                message.response
+                                  .confidence
+                              }
                             </span>
                           )}
 
                           {message.response.route && (
-                            <span>Route: {message.response.route}</span>
+                            <span>
+                              Route:{" "}
+                              {
+                                message.response
+                                  .route
+                              }
+                            </span>
                           )}
 
-                          {typeof message.response.results_count ===
+                          {typeof message.response
+                            .results_count ===
                             "number" && (
                             <span>
-                              Sources: {message.response.results_count}
+                              Sources:{" "}
+                              {
+                                message.response
+                                  .results_count
+                              }
                             </span>
                           )}
                         </div>
 
-                        {message.response.filters?.enforced_access_levels && (
+                        {message.response.route ===
+                          "tax" && (
+                          <Link
+                            className="inline-action-button"
+                            to="/tax"
+                          >
+                            <Calculator size={17} />
+                            Open Tax Regime Comparison
+                          </Link>
+                        )}
+
+                        {message.response.filters
+                          ?.enforced_access_levels && (
                           <div className="access-strip">
                             Access used:{" "}
                             {message.response.filters.enforced_access_levels.join(
@@ -411,10 +579,14 @@ export default function ChatPage() {
                         )}
 
                         {message.response.sources &&
-                          message.response.sources.length > 0 && (
+                          message.response.sources
+                            .length > 0 && (
                             <div className="sources-grid">
                               {message.response.sources.map(
-                                (source, index) => (
+                                (
+                                  source,
+                                  index
+                                ) => (
                                   <SourceCard
                                     key={`${source.document_id}-${source.chunk_index}-${index}`}
                                     source={source}
@@ -437,22 +609,32 @@ export default function ChatPage() {
 
                   <div className="message-body">
                     <p>
-                      Searching policy documents and generating answer...
+                      Processing your request...
                     </p>
                   </div>
                 </article>
               )}
             </div>
 
-            <form className="chat-input-form" onSubmit={handleSubmit}>
+            <form
+              className="chat-input-form"
+              onSubmit={handleSubmit}
+            >
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Ask about benefits, leave, compensation, remote work, IT security..."
+                onChange={(event) =>
+                  setQuery(event.target.value)
+                }
+                placeholder="Ask about benefits, leave, tax regimes, compensation, IT security..."
                 disabled={isAsking}
               />
 
-              <button type="submit" disabled={isAsking || !query.trim()}>
+              <button
+                type="submit"
+                disabled={
+                  isAsking || !query.trim()
+                }
+              >
                 <Send size={18} />
                 Send
               </button>
@@ -463,27 +645,56 @@ export default function ChatPage() {
             <div className="prompt-card">
               <div className="prompt-card-header">
                 <AlertTriangle size={18} />
-                <strong>Try test questions</strong>
+                <strong>
+                  Try test questions
+                </strong>
               </div>
 
               <div className="example-list">
-                {exampleQuestions.map((questionItem) => (
-                  <button
-                    key={questionItem}
-                    type="button"
-                    onClick={() => submitQuestion(questionItem)}
-                    disabled={isAsking}
-                  >
-                    {questionItem}
-                  </button>
-                ))}
+                {exampleQuestions.map(
+                  (questionItem) => (
+                    <button
+                      key={questionItem}
+                      type="button"
+                      onClick={() =>
+                        submitQuestion(
+                          questionItem
+                        )
+                      }
+                      disabled={isAsking}
+                    >
+                      {questionItem}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="prompt-card">
+              <div className="prompt-card-header">
+                <Calculator size={18} />
+                <strong>
+                  Tax comparison
+                </strong>
+              </div>
+
+              <div className="example-list">
+                <Link
+                  className="inline-action-button"
+                  to="/tax"
+                >
+                  <Calculator size={17} />
+                  Open Tax Regime Comparison
+                </Link>
               </div>
             </div>
 
             <div className="prompt-card">
               <div className="prompt-card-header">
                 <ShieldCheck size={18} />
-                <strong>Security checks</strong>
+                <strong>
+                  Security checks
+                </strong>
               </div>
 
               <div className="example-list">
@@ -502,7 +713,9 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    submitQuestion("What is the compensation policy?")
+                    submitQuestion(
+                      "What is the compensation policy?"
+                    )
                   }
                   disabled={isAsking}
                 >

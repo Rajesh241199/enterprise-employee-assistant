@@ -1,7 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, chat, departments, documents, events, poc
+from app.api import (
+    admin,
+    auth,
+    chat,
+    departments,
+    documents,
+    events,
+    poc,
+    tax,
+)
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging
@@ -26,7 +35,10 @@ def parse_cors_origins() -> list[str]:
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Production-style internal employee knowledge assistant using Advanced RAG.",
+    description=(
+        "Production-style internal employee knowledge assistant "
+        "using Advanced RAG."
+    ),
     debug=settings.app_debug,
 )
 
@@ -38,7 +50,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=parse_cors_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
     allow_headers=[
         "Authorization",
         "Content-Type",
@@ -66,13 +85,53 @@ app.add_middleware(
 )
 
 
-app.include_router(auth.router, prefix="/api", tags=["Authentication"])
-app.include_router(documents.router, prefix="/api", tags=["Documents"])
-app.include_router(admin.router, prefix="/api", tags=["Admin Access Control"])
-app.include_router(chat.router, prefix="/api", tags=["Chat Retrieval"])
-app.include_router(departments.router, prefix="/api", tags=["Departments"])
-app.include_router(events.router, prefix="/api", tags=["Events and Holidays"])
-app.include_router(poc.router, prefix="/api", tags=["POC Lookup"])
+app.include_router(
+    auth.router,
+    prefix="/api",
+    tags=["Authentication"],
+)
+
+app.include_router(
+    documents.router,
+    prefix="/api",
+    tags=["Documents"],
+)
+
+app.include_router(
+    admin.router,
+    prefix="/api",
+    tags=["Admin Access Control"],
+)
+
+app.include_router(
+    chat.router,
+    prefix="/api",
+    tags=["Chat Retrieval"],
+)
+
+app.include_router(
+    departments.router,
+    prefix="/api",
+    tags=["Departments"],
+)
+
+app.include_router(
+    events.router,
+    prefix="/api",
+    tags=["Events and Holidays"],
+)
+
+app.include_router(
+    poc.router,
+    prefix="/api",
+    tags=["POC Lookup"],
+)
+
+app.include_router(
+    tax.router,
+    prefix="/api",
+    tags=["Tax Comparison"],
+)
 
 
 @app.get("/")
@@ -109,7 +168,11 @@ def readiness_check():
     postgres_ok = check_postgres_connection()
     qdrant_ok = check_qdrant_connection()
 
-    overall_status = "ok" if postgres_ok and qdrant_ok else "degraded"
+    overall_status = (
+        "ok"
+        if postgres_ok and qdrant_ok
+        else "degraded"
+    )
 
     return {
         "status": overall_status,
