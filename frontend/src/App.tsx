@@ -14,76 +14,81 @@ import PermissionRoute from "./components/PermissionRoute";
 import {
   getDefaultRoute,
 } from "./config/accessControl";
-import { useAuth } from "./context/AuthContext";
+import {
+  useAuth,
+} from "./context/AuthContext";
 
 import AccessDeniedPage from "./pages/AccessDeniedPage";
 import AdminDocumentsPage from "./pages/AdminDocumentsPage";
 import AdminOnboardingPage from "./pages/AdminOnboardingPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import TaxCalculatorPage from "./pages/TaxCalculatorPage";
 
 
-type PublicRouteProps = {
+type RouteWrapperProps = {
   children: ReactNode;
 };
 
 
+function LoadingScreen() {
+  return (
+    <div className="screen-center">
+      <div className="loading-card">
+        Loading session...
+      </div>
+    </div>
+  );
+}
+
+
 function PublicRoute({
   children,
-}: PublicRouteProps) {
+}: RouteWrapperProps) {
   const {
     user,
     isAuthenticated,
     isLoading,
   } = useAuth();
 
-
   if (isLoading) {
-    return (
-      <div className="screen-center">
-        <div className="loading-card">
-          Loading session...
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
-
   if (isAuthenticated) {
+    const destination =
+      user?.must_change_password
+        ? "/change-password"
+        : getDefaultRoute(
+            user?.role
+          );
+
     return (
       <Navigate
-        to={getDefaultRoute(
-          user?.role
-        )}
+        to={destination}
         replace
       />
     );
   }
 
-
   return <>{children}</>;
 }
 
 
-function AuthenticatedLayout() {
+function PasswordChangeRoute({
+  children,
+}: RouteWrapperProps) {
   const {
+    user,
     isAuthenticated,
     isLoading,
   } = useAuth();
 
-
   if (isLoading) {
-    return (
-      <div className="screen-center">
-        <div className="loading-card">
-          Loading session...
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
-
 
   if (!isAuthenticated) {
     return (
@@ -94,6 +99,53 @@ function AuthenticatedLayout() {
     );
   }
 
+  if (
+    !user?.must_change_password
+  ) {
+    return (
+      <Navigate
+        to={getDefaultRoute(
+          user?.role
+        )}
+        replace
+      />
+    );
+  }
+
+  return <>{children}</>;
+}
+
+
+function AuthenticatedLayout() {
+  const {
+    user,
+    isAuthenticated,
+    isLoading,
+  } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+      />
+    );
+  }
+
+  if (
+    user?.must_change_password
+  ) {
+    return (
+      <Navigate
+        to="/change-password"
+        replace
+      />
+    );
+  }
 
   return <AppLayout />;
 }
@@ -125,6 +177,15 @@ export default function App() {
             <PublicRoute>
               <LoginPage />
             </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/change-password"
+          element={
+            <PasswordChangeRoute>
+              <ChangePasswordPage />
+            </PasswordChangeRoute>
           }
         />
 

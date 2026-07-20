@@ -2667,3 +2667,211 @@ The centralized layout hides those duplicated sidebars.
     padding: 0;
   }
 }
+
+/* Forced password-change page */
+
+.login-security-note {
+  margin: 1rem 0 0;
+  color: #93a9c5;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.password-change-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background:
+    radial-gradient(
+      circle at top,
+      rgba(37, 99, 235, 0.2),
+      transparent 38%
+    ),
+    #071126;
+}
+
+.password-change-card {
+  width: min(540px, 100%);
+  border: 1px solid
+    rgba(148, 163, 184, 0.2);
+  border-radius: 24px;
+  padding: 1.6rem;
+  color: #f8fafc;
+  background:
+    rgba(15, 23, 42, 0.94);
+  box-shadow:
+    0 28px 80px
+    rgba(0, 0, 0, 0.42);
+}
+
+.password-change-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1.4rem;
+  color: #bfdbfe;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.password-change-icon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 1rem;
+  border: 1px solid
+    rgba(96, 165, 250, 0.28);
+  border-radius: 20px;
+  color: #bfdbfe;
+  background:
+    rgba(37, 99, 235, 0.15);
+}
+
+.password-change-label {
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.password-change-card h1 {
+  margin: 0.45rem 0 0.65rem;
+  font-size: clamp(
+    1.55rem,
+    4vw,
+    2.1rem
+  );
+}
+
+.password-change-card > p {
+  margin: 0;
+  color: #a9bad1;
+  line-height: 1.6;
+}
+
+.password-change-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.3rem;
+}
+
+.password-change-form label {
+  display: grid;
+  gap: 0.42rem;
+  color: #dbeafe;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.password-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid
+    rgba(148, 163, 184, 0.25);
+  border-radius: 13px;
+  padding: 0 0.8rem;
+  color: #93c5fd;
+  background:
+    rgba(2, 6, 23, 0.62);
+}
+
+.password-input-wrapper:focus-within {
+  border-color:
+    rgba(96, 165, 250, 0.8);
+  box-shadow:
+    0 0 0 3px
+    rgba(37, 99, 235, 0.12);
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  color: #f8fafc;
+  background: transparent;
+  outline: none;
+}
+
+.password-visibility-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  color: #93c5fd;
+  font-size: 0.82rem;
+  background: transparent;
+}
+
+.password-requirements {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid
+    rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  padding: 0.85rem;
+  background:
+    rgba(2, 6, 23, 0.35);
+}
+
+.password-requirements > strong {
+  margin-bottom: 0.2rem;
+  color: #dbeafe;
+  font-size: 0.84rem;
+}
+
+.password-requirements > div {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #7f91aa;
+  font-size: 0.8rem;
+}
+
+.password-requirements > div.passed {
+  color: #86efac;
+}
+
+.password-change-form
+  > button[type="submit"] {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 47px;
+  border: 0;
+  border-radius: 13px;
+  color: #ffffff;
+  font-weight: 800;
+  background:
+    linear-gradient(
+      135deg,
+      #2563eb,
+      #0891b2
+    );
+}
+
+.password-change-form
+  > button[type="submit"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.password-change-logout {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  margin-top: 0.85rem;
+  border: 0;
+  padding: 0.5rem;
+  color: #9fb1c8;
+  background: transparent;
+}
