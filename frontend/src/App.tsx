@@ -1,3 +1,7 @@
+import type {
+  ReactNode,
+} from "react";
+
 import {
   BrowserRouter,
   Navigate,
@@ -5,8 +9,14 @@ import {
   Routes,
 } from "react-router-dom";
 
+import AppLayout from "./components/AppLayout";
+import PermissionRoute from "./components/PermissionRoute";
+import {
+  getDefaultRoute,
+} from "./config/accessControl";
 import { useAuth } from "./context/AuthContext";
 
+import AccessDeniedPage from "./pages/AccessDeniedPage";
 import AdminDocumentsPage from "./pages/AdminDocumentsPage";
 import AdminOnboardingPage from "./pages/AdminOnboardingPage";
 import ChatPage from "./pages/ChatPage";
@@ -15,18 +25,20 @@ import OnboardingPage from "./pages/OnboardingPage";
 import TaxCalculatorPage from "./pages/TaxCalculatorPage";
 
 
-type RouteProps = {
-  children: React.ReactNode;
+type PublicRouteProps = {
+  children: ReactNode;
 };
 
 
-function ProtectedRoute({
+function PublicRoute({
   children,
-}: RouteProps) {
+}: PublicRouteProps) {
   const {
+    user,
     isAuthenticated,
     isLoading,
   } = useAuth();
+
 
   if (isLoading) {
     return (
@@ -37,6 +49,41 @@ function ProtectedRoute({
       </div>
     );
   }
+
+
+  if (isAuthenticated) {
+    return (
+      <Navigate
+        to={getDefaultRoute(
+          user?.role
+        )}
+        replace
+      />
+    );
+  }
+
+
+  return <>{children}</>;
+}
+
+
+function AuthenticatedLayout() {
+  const {
+    isAuthenticated,
+    isLoading,
+  } = useAuth();
+
+
+  if (isLoading) {
+    return (
+      <div className="screen-center">
+        <div className="loading-card">
+          Loading session...
+        </div>
+      </div>
+    );
+  }
+
 
   if (!isAuthenticated) {
     return (
@@ -47,38 +94,24 @@ function ProtectedRoute({
     );
   }
 
-  return <>{children}</>;
+
+  return <AppLayout />;
 }
 
 
-function PublicRoute({
-  children,
-}: RouteProps) {
+function HomeRedirect() {
   const {
-    isAuthenticated,
-    isLoading,
+    user,
   } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="screen-center">
-        <div className="loading-card">
-          Loading session...
-        </div>
-      </div>
-    );
-  }
-
-  if (isAuthenticated) {
-    return (
-      <Navigate
-        to="/chat"
-        replace
-      />
-    );
-  }
-
-  return <>{children}</>;
+  return (
+    <Navigate
+      to={getDefaultRoute(
+        user?.role
+      )}
+      replace
+    />
+  );
 }
 
 
@@ -96,69 +129,92 @@ export default function App() {
         />
 
         <Route
-          path="/chat"
           element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
+            <AuthenticatedLayout />
           }
-        />
+        >
+          <Route
+            index
+            element={
+              <HomeRedirect />
+            }
+          />
 
-        <Route
-          path="/onboarding"
-          element={
-            <ProtectedRoute>
-              <OnboardingPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/chat"
+            element={
+              <PermissionRoute
+                permission="chat:view"
+              >
+                <ChatPage />
+              </PermissionRoute>
+            }
+          />
 
-        <Route
-          path="/tax"
-          element={
-            <ProtectedRoute>
-              <TaxCalculatorPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/onboarding"
+            element={
+              <PermissionRoute
+                permission={
+                  "onboarding:self:view"
+                }
+              >
+                <OnboardingPage />
+              </PermissionRoute>
+            }
+          />
 
-        <Route
-          path="/admin/onboarding"
-          element={
-            <ProtectedRoute>
-              <AdminOnboardingPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/tax"
+            element={
+              <PermissionRoute
+                permission="tax:view"
+              >
+                <TaxCalculatorPage />
+              </PermissionRoute>
+            }
+          />
 
-        <Route
-          path="/admin/documents"
-          element={
-            <ProtectedRoute>
-              <AdminDocumentsPage />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/admin/onboarding"
+            element={
+              <PermissionRoute
+                permission={
+                  "employees:manage"
+                }
+              >
+                <AdminOnboardingPage />
+              </PermissionRoute>
+            }
+          />
 
-        <Route
-          path="/"
-          element={
-            <Navigate
-              to="/chat"
-              replace
-            />
-          }
-        />
+          <Route
+            path="/admin/documents"
+            element={
+              <PermissionRoute
+                permission={
+                  "documents:manage"
+                }
+              >
+                <AdminDocumentsPage />
+              </PermissionRoute>
+            }
+          />
 
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to="/chat"
-              replace
-            />
-          }
-        />
+          <Route
+            path="/access-denied"
+            element={
+              <AccessDeniedPage />
+            }
+          />
+
+          <Route
+            path="*"
+            element={
+              <HomeRedirect />
+            }
+          />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
