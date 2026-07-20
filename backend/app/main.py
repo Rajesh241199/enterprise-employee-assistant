@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     admin,
+    admin_onboarding,
     auth,
     chat,
     departments,
     documents,
+    onboarding,
     events,
     poc,
     tax,
@@ -104,6 +106,14 @@ app.include_router(
 )
 
 app.include_router(
+    admin_onboarding.router,
+    prefix="/api",
+    tags=[
+        "HR Admin Onboarding Management"
+    ],
+)
+
+app.include_router(
     chat.router,
     prefix="/api",
     tags=["Chat Retrieval"],
@@ -125,6 +135,12 @@ app.include_router(
     poc.router,
     prefix="/api",
     tags=["POC Lookup"],
+)
+
+app.include_router(
+    onboarding.router,
+    prefix="/api",
+    tags=["Employee Onboarding"],
 )
 
 app.include_router(

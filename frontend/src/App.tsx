@@ -7,9 +7,11 @@ import {
 
 import { useAuth } from "./context/AuthContext";
 
-import LoginPage from "./pages/LoginPage";
-import ChatPage from "./pages/ChatPage";
 import AdminDocumentsPage from "./pages/AdminDocumentsPage";
+import AdminOnboardingPage from "./pages/AdminOnboardingPage";
+import ChatPage from "./pages/ChatPage";
+import LoginPage from "./pages/LoginPage";
+import OnboardingPage from "./pages/OnboardingPage";
 import TaxCalculatorPage from "./pages/TaxCalculatorPage";
 
 
@@ -18,7 +20,9 @@ type RouteProps = {
 };
 
 
-function ProtectedRoute({ children }: RouteProps) {
+function ProtectedRoute({
+  children,
+}: RouteProps) {
   const {
     isAuthenticated,
     isLoading,
@@ -35,14 +39,21 @@ function ProtectedRoute({ children }: RouteProps) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+      />
+    );
   }
 
   return <>{children}</>;
 }
 
 
-function PublicRoute({ children }: RouteProps) {
+function PublicRoute({
+  children,
+}: RouteProps) {
   const {
     isAuthenticated,
     isLoading,
@@ -59,7 +70,12 @@ function PublicRoute({ children }: RouteProps) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/chat" replace />;
+    return (
+      <Navigate
+        to="/chat"
+        replace
+      />
+    );
   }
 
   return <>{children}</>;
@@ -89,10 +105,28 @@ export default function App() {
         />
 
         <Route
+          path="/onboarding"
+          element={
+            <ProtectedRoute>
+              <OnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/tax"
           element={
             <ProtectedRoute>
               <TaxCalculatorPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/onboarding"
+          element={
+            <ProtectedRoute>
+              <AdminOnboardingPage />
             </ProtectedRoute>
           }
         />
@@ -108,12 +142,22 @@ export default function App() {
 
         <Route
           path="/"
-          element={<Navigate to="/chat" replace />}
+          element={
+            <Navigate
+              to="/chat"
+              replace
+            />
+          }
         />
 
         <Route
           path="*"
-          element={<Navigate to="/chat" replace />}
+          element={
+            <Navigate
+              to="/chat"
+              replace
+            />
+          }
         />
       </Routes>
     </BrowserRouter>

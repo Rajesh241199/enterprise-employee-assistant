@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Briefcase,
   Calculator,
   FileText,
   IndianRupee,
@@ -155,7 +156,9 @@ function NumberField({
 }
 
 
-function getRoleLabel(role: string): string {
+function getRoleLabel(
+  role: string
+): string {
   const labels: Record<string, string> = {
     employee: "Employee",
     hr_admin: "HR Admin",
@@ -168,7 +171,9 @@ function getRoleLabel(role: string): string {
 }
 
 
-function isAdminRole(role?: string): boolean {
+function isAdminRole(
+  role?: string
+): boolean {
   return [
     "hr_admin",
     "finance_admin",
@@ -178,12 +183,17 @@ function isAdminRole(role?: string): boolean {
 }
 
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
+function formatCurrency(
+  value: number
+): string {
+  return new Intl.NumberFormat(
+    "en-IN",
+    {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }
+  ).format(value);
 }
 
 
@@ -191,11 +201,17 @@ function getRecommendationLabel(
   recommendation:
     TaxComparisonResponse["recommended_regime"]
 ): string {
-  if (recommendation === "old_regime") {
+  if (
+    recommendation ===
+    "old_regime"
+  ) {
     return "Old Tax Regime";
   }
 
-  if (recommendation === "new_regime") {
+  if (
+    recommendation ===
+    "new_regime"
+  ) {
     return "New Tax Regime";
   }
 
@@ -211,12 +227,17 @@ function RegimeCard({
   return (
     <article
       className={`tax-result-card ${
-        recommended ? "recommended" : ""
+        recommended
+          ? "recommended"
+          : ""
       }`}
     >
       <div className="tax-result-card-header">
         <div>
-          <span>Estimated calculation</span>
+          <span>
+            Estimated calculation
+          </span>
+
           <h3>{title}</h3>
         </div>
 
@@ -228,10 +249,14 @@ function RegimeCard({
       </div>
 
       <div className="tax-total">
-        <span>Estimated total tax</span>
+        <span>
+          Estimated total tax
+        </span>
 
         <strong>
-          {formatCurrency(breakdown.total_tax)}
+          {formatCurrency(
+            breakdown.total_tax
+          )}
         </strong>
       </div>
 
@@ -247,7 +272,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Other taxable income</dt>
+          <dt>
+            Other taxable income
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -267,7 +294,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Standard deduction</dt>
+          <dt>
+            Standard deduction
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -287,7 +316,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Professional tax deduction</dt>
+          <dt>
+            Professional tax deduction
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -297,7 +328,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Chapter VI-A deductions</dt>
+          <dt>
+            Chapter VI-A deductions
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -307,7 +340,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Home-loan interest</dt>
+          <dt>
+            Home-loan interest
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -317,7 +352,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Employer NPS deduction</dt>
+          <dt>
+            Employer NPS deduction
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -327,7 +364,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Tax before rebate</dt>
+          <dt>
+            Tax before rebate
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -340,7 +379,9 @@ function RegimeCard({
           <dt>Rebate</dt>
 
           <dd>
-            {formatCurrency(breakdown.rebate)}
+            {formatCurrency(
+              breakdown.rebate
+            )}
           </dd>
         </div>
 
@@ -355,7 +396,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Income tax after relief</dt>
+          <dt>
+            Income tax after relief
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -365,7 +408,9 @@ function RegimeCard({
         </div>
 
         <div>
-          <dt>Health and education cess</dt>
+          <dt>
+            Health and education cess
+          </dt>
 
           <dd>
             {formatCurrency(
@@ -380,25 +425,40 @@ function RegimeCard({
 
 
 export default function TaxCalculatorPage() {
-  const { user, logout } = useAuth();
+  const {
+    user,
+    logout,
+  } = useAuth();
 
-  const [form, setForm] =
-    useState<TaxFormState>(INITIAL_FORM);
+  const [
+    form,
+    setForm,
+  ] = useState<TaxFormState>(
+    INITIAL_FORM
+  );
 
-  const [result, setResult] =
+  const [
+    result,
+    setResult,
+  ] =
     useState<TaxComparisonResponse | null>(
       null
     );
 
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const [isCalculating, setIsCalculating] =
-    useState(false);
-
-  const roleLabel = getRoleLabel(
-    user?.role ?? ""
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(
+    null
   );
+
+  const [
+    isCalculating,
+    setIsCalculating,
+  ] = useState(false);
+
+  const roleLabel =
+    getRoleLabel(user?.role ?? "");
 
 
   function updateAmount(
@@ -424,44 +484,52 @@ export default function TaxCalculatorPage() {
     return {
       tax_year: "2026-27",
       age_group: form.ageGroup,
-      employer_type: form.employerType,
+      employer_type:
+        form.employerType,
 
-      annual_gross_salary: toAmount(
-        form.annualGrossSalary
-      ),
+      annual_gross_salary:
+        toAmount(
+          form.annualGrossSalary
+        ),
 
-      annual_basic_salary: toAmount(
-        form.annualBasicSalary
-      ),
+      annual_basic_salary:
+        toAmount(
+          form.annualBasicSalary
+        ),
 
-      annual_hra_received: toAmount(
-        form.annualHraReceived
-      ),
+      annual_hra_received:
+        toAmount(
+          form.annualHraReceived
+        ),
 
-      annual_rent_paid: toAmount(
-        form.annualRentPaid
-      ),
+      annual_rent_paid:
+        toAmount(
+          form.annualRentPaid
+        ),
 
-      is_metro_city: form.isMetroCity,
+      is_metro_city:
+        form.isMetroCity,
 
-      professional_tax_paid: toAmount(
-        form.professionalTaxPaid
-      ),
+      professional_tax_paid:
+        toAmount(
+          form.professionalTaxPaid
+        ),
 
-      section_80c: toAmount(
-        form.section80c
-      ),
+      section_80c:
+        toAmount(form.section80c),
 
-      section_80d: toAmount(
-        form.section80d
-      ),
+      section_80d:
+        toAmount(form.section80d),
 
-      section_80ccd_1b: toAmount(
-        form.section80ccd1b
-      ),
+      section_80ccd_1b:
+        toAmount(
+          form.section80ccd1b
+        ),
 
       home_loan_interest_self_occupied:
-        toAmount(form.homeLoanInterest),
+        toAmount(
+          form.homeLoanInterest
+        ),
 
       other_old_regime_deductions:
         toAmount(
@@ -473,12 +541,14 @@ export default function TaxCalculatorPage() {
           form.employerNpsContribution
         ),
 
-      other_taxable_income: toAmount(
-        form.otherTaxableIncome
-      ),
+      other_taxable_income:
+        toAmount(
+          form.otherTaxableIncome
+        ),
 
       has_business_income: false,
-      has_special_rate_income: false,
+      has_special_rate_income:
+        false,
       has_foreign_income: false,
     };
   }
@@ -489,10 +559,13 @@ export default function TaxCalculatorPage() {
   ) {
     event.preventDefault();
 
-    const payload = buildRequest();
+    const payload =
+      buildRequest();
 
     const validationError =
-      validateTaxComparisonRequest(payload);
+      validateTaxComparisonRequest(
+        payload
+      );
 
     if (validationError) {
       setError(validationError);
@@ -506,12 +579,16 @@ export default function TaxCalculatorPage() {
 
     try {
       const comparison =
-        await compareTaxRegimes(payload);
+        await compareTaxRegimes(
+          payload
+        );
 
       setResult(comparison);
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError)
+        getApiErrorMessage(
+          requestError
+        )
       );
     } finally {
       setIsCalculating(false);
@@ -547,8 +624,15 @@ export default function TaxCalculatorPage() {
 
         <nav className="sidebar-nav">
           <Link to="/chat">
-            <MessageSquareText size={18} />
+            <MessageSquareText
+              size={18}
+            />
             Chat
+          </Link>
+
+          <Link to="/onboarding">
+            <Briefcase size={18} />
+            My Onboarding
           </Link>
 
           <Link
@@ -599,8 +683,9 @@ export default function TaxCalculatorPage() {
             </h1>
 
             <p>
-              Compare estimated old and new
-              regime tax for Tax Year 2026–27.
+              Compare estimated old and
+              new regime tax for Tax Year
+              2026–27.
             </p>
           </div>
 
@@ -624,11 +709,11 @@ export default function TaxCalculatorPage() {
 
             <span>
               Salary, rent, income and
-              deduction values are used only
-              for the current calculation.
-              They are not saved in the
-              application database or audit
-              metadata.
+              deduction values are used
+              only for the current
+              calculation. They are not
+              saved in the application
+              database or audit metadata.
             </span>
           </div>
         </div>
@@ -652,6 +737,7 @@ export default function TaxCalculatorPage() {
               <div className="tax-section-heading">
                 <div>
                   <span>Section 1</span>
+
                   <h2>
                     Taxpayer profile
                   </h2>
@@ -675,7 +761,8 @@ export default function TaxCalculatorPage() {
 
                   <small>
                     Calculator rules are
-                    versioned for this tax year.
+                    versioned for this tax
+                    year.
                   </small>
                 </label>
 
@@ -683,14 +770,18 @@ export default function TaxCalculatorPage() {
                   <span>Age group</span>
 
                   <select
-                    value={form.ageGroup}
+                    value={
+                      form.ageGroup
+                    }
                     onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        ageGroup:
-                          event.target
-                            .value as AgeGroup,
-                      }))
+                      setForm(
+                        (current) => ({
+                          ...current,
+                          ageGroup:
+                            event.target
+                              .value as AgeGroup,
+                        })
+                      )
                     }
                   >
                     <option value="under_60">
@@ -708,23 +799,28 @@ export default function TaxCalculatorPage() {
                 </label>
 
                 <label className="tax-field">
-                  <span>Employer type</span>
+                  <span>
+                    Employer type
+                  </span>
 
                   <select
                     value={
                       form.employerType
                     }
                     onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        employerType:
-                          event.target
-                            .value as EmployerType,
-                      }))
+                      setForm(
+                        (current) => ({
+                          ...current,
+                          employerType:
+                            event.target
+                              .value as EmployerType,
+                        })
+                      )
                     }
                   >
                     <option value="private_or_other">
-                      Private or other employer
+                      Private or other
+                      employer
                     </option>
 
                     <option value="central_or_state_government">
@@ -740,12 +836,15 @@ export default function TaxCalculatorPage() {
               <div className="tax-section-heading">
                 <div>
                   <span>Section 2</span>
+
                   <h2>
                     Salary and income
                   </h2>
                 </div>
 
-                <IndianRupee size={21} />
+                <IndianRupee
+                  size={21}
+                />
               </div>
 
               <div className="tax-form-grid">
@@ -860,17 +959,21 @@ export default function TaxCalculatorPage() {
                       form.isMetroCity
                     }
                     onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        isMetroCity:
-                          event.target.checked,
-                      }))
+                      setForm(
+                        (current) => ({
+                          ...current,
+                          isMetroCity:
+                            event.target
+                              .checked,
+                        })
+                      )
                     }
                   />
 
                   <span>
-                    I live in an eligible metro
-                    city for HRA calculation
+                    I live in an eligible
+                    metro city for HRA
+                    calculation
                   </span>
                 </label>
               </div>
@@ -886,7 +989,9 @@ export default function TaxCalculatorPage() {
                   </h2>
                 </div>
 
-                <TrendingDown size={21} />
+                <TrendingDown
+                  size={21}
+                />
               </div>
 
               <div className="tax-form-grid">
@@ -982,13 +1087,16 @@ export default function TaxCalculatorPage() {
               <AlertTriangle size={19} />
 
               <span>
-                Version 1 supports resident
-                salaried individuals with
-                ordinary-rate income up to
-                ₹50,00,000. It does not support
-                business income, capital gains,
-                crypto, lottery income, foreign
-                income, surcharge or foreign-tax
+                Version 1 supports
+                resident salaried
+                individuals with
+                ordinary-rate income up
+                to ₹50,00,000. It does
+                not support business
+                income, capital gains,
+                crypto, lottery income,
+                foreign income,
+                surcharge or foreign-tax
                 credit.
               </span>
             </div>
@@ -1022,7 +1130,9 @@ export default function TaxCalculatorPage() {
             <section className="tax-results">
               <article className="recommendation-card">
                 <div className="recommendation-icon">
-                  <TrendingDown size={26} />
+                  <TrendingDown
+                    size={26}
+                  />
                 </div>
 
                 <div>
@@ -1040,13 +1150,13 @@ export default function TaxCalculatorPage() {
 
                   <div className="saving-value">
                     <span>
-                      Estimated annual saving
+                      Estimated annual
+                      saving
                     </span>
 
                     <strong>
                       {formatCurrency(
-                        result
-                          .estimated_annual_saving
+                        result.estimated_annual_saving
                       )}
                     </strong>
                   </div>

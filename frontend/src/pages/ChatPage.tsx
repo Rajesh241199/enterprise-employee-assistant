@@ -1,6 +1,7 @@
 import { AxiosError } from "axios";
 import {
   AlertTriangle,
+  Briefcase,
   Calculator,
   FileText,
   Lock,
@@ -12,7 +13,11 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { Link } from "react-router-dom";
 
 import { askChat } from "../api/chat";
@@ -26,11 +31,13 @@ import type {
 
 
 const exampleQuestions = [
+  "Show my onboarding details.",
+  "Who is my reporting manager?",
+  "Which project am I assigned to?",
+  "Which business unit do I work under?",
+  "Who is my onboarding buddy?",
   "What benefits are available for employees?",
   "What is the leave policy?",
-  "What is the compensation policy?",
-  "What is the IT security policy?",
-  "What is the expense reimbursement policy?",
   "As per my salary, which tax regime suits me?",
 ];
 
@@ -38,20 +45,31 @@ const exampleQuestions = [
 function createMessageId(): string {
   const cryptoApi = globalThis.crypto;
 
-  if (typeof cryptoApi?.randomUUID === "function") {
+  if (
+    typeof cryptoApi?.randomUUID ===
+    "function"
+  ) {
     return cryptoApi.randomUUID();
   }
 
-  if (typeof cryptoApi?.getRandomValues === "function") {
+  if (
+    typeof cryptoApi?.getRandomValues ===
+    "function"
+  ) {
     const bytes = new Uint8Array(16);
 
     cryptoApi.getRandomValues(bytes);
 
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    bytes[6] =
+      (bytes[6] & 0x0f) | 0x40;
 
-    const hex = Array.from(bytes, (byte) =>
-      byte.toString(16).padStart(2, "0")
+    bytes[8] =
+      (bytes[8] & 0x3f) | 0x80;
+
+    const hex = Array.from(
+      bytes,
+      (byte) =>
+        byte.toString(16).padStart(2, "0")
     ).join("");
 
     return [
@@ -69,7 +87,9 @@ function createMessageId(): string {
 }
 
 
-function getRoleLabel(role: string) {
+function getRoleLabel(
+  role: string
+): string {
   const labels: Record<string, string> = {
     employee: "Employee",
     hr_admin: "HR Admin",
@@ -82,7 +102,9 @@ function getRoleLabel(role: string) {
 }
 
 
-function isAdminRole(role?: string) {
+function isAdminRole(
+  role?: string
+): boolean {
   return [
     "hr_admin",
     "finance_admin",
@@ -92,22 +114,56 @@ function isAdminRole(role?: string) {
 }
 
 
+function isStructuredQuestion(
+  query: string
+): boolean {
+  const normalizedQuery =
+    query.toLowerCase();
+
+  const structuredKeywords = [
+    "onboarding",
+    "reporting manager",
+    "who is my manager",
+    "who do i report to",
+    "whom do i report to",
+    "business unit",
+    "my department",
+    "which department",
+    "assigned project",
+    "which project",
+    "project assignment",
+    "my profile",
+    "point of contact",
+    "poc",
+    "hr contact",
+    "it contact",
+    "onboarding buddy",
+    "my buddy",
+    "my mentor",
+    "tax",
+    "tax regime",
+    "old regime",
+    "new regime",
+    "income tax",
+    "salary tax",
+    "80c",
+    "80d",
+  ];
+
+  return structuredKeywords.some(
+    (keyword) =>
+      normalizedQuery.includes(keyword)
+  );
+}
+
+
 function getDefaultFilters(
   query: string
 ): Partial<ChatAskRequest> {
-  const lowerQuery = query.toLowerCase();
+  const lowerQuery =
+    query.toLowerCase();
 
-  const isTaxQuestion =
-    lowerQuery.includes("tax") ||
-    lowerQuery.includes("tax regime") ||
-    lowerQuery.includes("old regime") ||
-    lowerQuery.includes("new regime") ||
-    lowerQuery.includes("income tax") ||
-    lowerQuery.includes("80c") ||
-    lowerQuery.includes("80d") ||
-    lowerQuery.includes("salary tax");
-
-  if (isTaxQuestion) {
+  if (isStructuredQuestion(query)) {
     return {
       document_type: null,
       policy_name: null,
@@ -116,11 +172,15 @@ function getDefaultFilters(
     };
   }
 
-  if (lowerQuery.includes("benefit")) {
+  if (
+    lowerQuery.includes("benefit")
+  ) {
     return {
       document_type: "benefits_policy",
-      policy_name: "Employee Benefits Plan 2026",
-      department_owner: "Human Resources",
+      policy_name:
+        "Employee Benefits Plan 2026",
+      department_owner:
+        "Human Resources",
       access_level: null,
     };
   }
@@ -132,7 +192,8 @@ function getDefaultFilters(
     return {
       document_type: "leave_policy",
       policy_name: "Leave Policy 2026",
-      department_owner: "Human Resources",
+      department_owner:
+        "Human Resources",
       access_level: null,
     };
   }
@@ -143,20 +204,27 @@ function getDefaultFilters(
   ) {
     return {
       document_type: "test_policy",
-      policy_name: "Remote Work Policy 2026",
-      department_owner: "Human Resources",
+      policy_name:
+        "Remote Work Policy 2026",
+      department_owner:
+        "Human Resources",
       access_level: null,
     };
   }
 
   if (
-    lowerQuery.includes("compensation") ||
+    lowerQuery.includes(
+      "compensation"
+    ) ||
     lowerQuery.includes("salary")
   ) {
     return {
-      document_type: "compensation_policy",
-      policy_name: "Compensation Policy 2026",
-      department_owner: "Human Resources",
+      document_type:
+        "compensation_policy",
+      policy_name:
+        "Compensation Policy 2026",
+      department_owner:
+        "Human Resources",
       access_level: "hr_only",
     };
   }
@@ -166,8 +234,10 @@ function getDefaultFilters(
     lowerQuery.includes("access")
   ) {
     return {
-      document_type: "it_security_policy",
-      policy_name: "IT Security and Access Policy 2026",
+      document_type:
+        "it_security_policy",
+      policy_name:
+        "IT Security and Access Policy 2026",
       department_owner: "IT",
       access_level: "it_only",
     };
@@ -175,11 +245,14 @@ function getDefaultFilters(
 
   if (
     lowerQuery.includes("expense") ||
-    lowerQuery.includes("reimbursement") ||
+    lowerQuery.includes(
+      "reimbursement"
+    ) ||
     lowerQuery.includes("travel")
   ) {
     return {
-      document_type: "reimbursement_policy",
+      document_type:
+        "reimbursement_policy",
       policy_name:
         "Employee Expense Reimbursement Policy 2026",
       department_owner: "Finance",
@@ -199,7 +272,8 @@ function getDefaultFilters(
 function buildChatPayload(
   query: string
 ): ChatAskRequest {
-  const filters = getDefaultFilters(query);
+  const filters =
+    getDefaultFilters(query);
 
   return {
     query,
@@ -209,11 +283,19 @@ function buildChatPayload(
     max_sources: 2,
     use_reranking: true,
     use_query_rewriting: true,
-    document_type: filters.document_type ?? null,
-    policy_name: filters.policy_name ?? null,
+
+    document_type:
+      filters.document_type ?? null,
+
+    policy_name:
+      filters.policy_name ?? null,
+
     department_owner:
       filters.department_owner ?? null,
-    access_level: filters.access_level ?? null,
+
+    access_level:
+      filters.access_level ?? null,
+
     chunk_type: null,
   };
 }
@@ -223,8 +305,11 @@ function getErrorType(
   error: unknown
 ): ChatMessage["errorType"] {
   if (error instanceof AxiosError) {
-    const status = error.response?.status;
-    const detail = error.response?.data?.detail;
+    const status =
+      error.response?.status;
+
+    const detail =
+      error.response?.data?.detail;
 
     if (status === 403) {
       return "rbac";
@@ -240,7 +325,8 @@ function getErrorType(
 
     if (
       status === 400 &&
-      typeof detail?.answer === "string"
+      typeof detail?.answer ===
+        "string"
     ) {
       return "security";
     }
@@ -252,13 +338,15 @@ function getErrorType(
 
 function getErrorTitle(
   errorType?: ChatMessage["errorType"]
-) {
+): string {
   if (errorType === "rbac") {
     return "Access restricted";
   }
 
   if (errorType === "security") {
-    return "Security policy blocked this request";
+    return (
+      "Security policy blocked this request"
+    );
   }
 
   return "Request failed";
@@ -284,19 +372,27 @@ function SourceCard({
 
       <div className="source-meta">
         {source.document_type && (
-          <span>{source.document_type}</span>
+          <span>
+            {source.document_type}
+          </span>
         )}
 
         {source.department_owner && (
-          <span>{source.department_owner}</span>
+          <span>
+            {source.department_owner}
+          </span>
         )}
 
         {source.access_level && (
-          <span>{source.access_level}</span>
+          <span>
+            {source.access_level}
+          </span>
         )}
 
         {source.page_number && (
-          <span>Page {source.page_number}</span>
+          <span>
+            Page {source.page_number}
+          </span>
         )}
       </div>
 
@@ -309,24 +405,36 @@ function SourceCard({
 
 
 export default function ChatPage() {
-  const { user, logout } = useAuth();
+  const {
+    user,
+    logout,
+  } = useAuth();
 
-  const [query, setQuery] = useState("");
-  const [isAsking, setIsAsking] =
-    useState(false);
+  const [
+    query,
+    setQuery,
+  ] = useState("");
 
-  const [messages, setMessages] =
-    useState<ChatMessage[]>(() => [
-      {
-        id: createMessageId(),
-        role: "assistant",
-        content:
-          "Hello! Ask me about employee benefits, leave policy, reimbursement, compensation, remote work, IT security, holidays, events, points of contact, or tax-regime comparison. Policy answers are grounded in indexed company documents and filtered by your role.",
-      },
-    ]);
+  const [
+    isAsking,
+    setIsAsking,
+  ] = useState(false);
+
+  const [
+    messages,
+    setMessages,
+  ] = useState<ChatMessage[]>(() => [
+    {
+      id: createMessageId(),
+      role: "assistant",
+      content:
+        "Hello! Ask me about your onboarding profile, department, business unit, reporting manager, project assignment, onboarding contacts, employee benefits, leave policy, reimbursement, compensation, IT security, holidays, events, or tax-regime comparison.",
+    },
+  ]);
 
   const roleLabel = useMemo(
-    () => getRoleLabel(user?.role ?? ""),
+    () =>
+      getRoleLabel(user?.role ?? ""),
     [user?.role]
   );
 
@@ -338,7 +446,10 @@ export default function ChatPage() {
       questionText ?? query
     ).trim();
 
-    if (!finalQuery || isAsking) {
+    if (
+      !finalQuery ||
+      isAsking
+    ) {
       return;
     }
 
@@ -361,26 +472,30 @@ export default function ChatPage() {
         buildChatPayload(finalQuery)
       );
 
-      const assistantMessage: ChatMessage = {
-        id: createMessageId(),
-        role: "assistant",
-        content: response.answer,
-        response,
-      };
+      const assistantMessage:
+        ChatMessage = {
+          id: createMessageId(),
+          role: "assistant",
+          content: response.answer,
+          response,
+        };
 
       setMessages((current) => [
         ...current,
         assistantMessage,
       ]);
     } catch (error) {
-      const errorType = getErrorType(error);
+      const errorType =
+        getErrorType(error);
 
-      const assistantMessage: ChatMessage = {
-        id: createMessageId(),
-        role: "assistant",
-        content: getApiErrorMessage(error),
-        errorType,
-      };
+      const assistantMessage:
+        ChatMessage = {
+          id: createMessageId(),
+          role: "assistant",
+          content:
+            getApiErrorMessage(error),
+          errorType,
+        };
 
       setMessages((current) => [
         ...current,
@@ -393,7 +508,7 @@ export default function ChatPage() {
 
 
   function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
     submitQuestion();
@@ -411,14 +526,26 @@ export default function ChatPage() {
               Internal Employee Assistant
             </strong>
 
-            <span>Policy Knowledge Portal</span>
+            <span>
+              Policy Knowledge Portal
+            </span>
           </div>
         </div>
 
         <nav className="sidebar-nav">
-          <Link className="active" to="/chat">
-            <MessageSquareText size={18} />
+          <Link
+            className="active"
+            to="/chat"
+          >
+            <MessageSquareText
+              size={18}
+            />
             Chat
+          </Link>
+
+          <Link to="/onboarding">
+            <Briefcase size={18} />
+            My Onboarding
           </Link>
 
           <Link to="/tax">
@@ -466,13 +593,14 @@ export default function ChatPage() {
             </h1>
 
             <p>
-              Ask policy questions, access
-              structured employee information, or
+              Ask policy questions, view
+              onboarding information, or
               compare tax regimes.
             </p>
           </div>
 
           <button
+            type="button"
             className="secondary-button"
             onClick={logout}
           >
@@ -484,122 +612,170 @@ export default function ChatPage() {
         <section className="chat-layout">
           <div className="chat-window">
             <div className="messages">
-              {messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={`message ${
-                    message.role
-                  } ${
-                    message.errorType
-                      ? "error-message"
-                      : ""
-                  }`}
-                >
-                  <div className="message-avatar">
-                    {message.role === "user" ? (
-                      <UserRound size={18} />
-                    ) : message.errorType ===
-                      "security" ? (
-                      <ShieldAlert size={18} />
-                    ) : message.errorType ===
-                      "rbac" ? (
-                      <Lock size={18} />
-                    ) : (
-                      <Sparkles size={18} />
-                    )}
-                  </div>
+              {messages.map(
+                (message) => (
+                  <article
+                    key={message.id}
+                    className={`message ${
+                      message.role
+                    } ${
+                      message.errorType
+                        ? "error-message"
+                        : ""
+                    }`}
+                  >
+                    <div className="message-avatar">
+                      {message.role ===
+                      "user" ? (
+                        <UserRound size={18} />
+                      ) : message.errorType ===
+                        "security" ? (
+                        <ShieldAlert
+                          size={18}
+                        />
+                      ) : message.errorType ===
+                        "rbac" ? (
+                        <Lock size={18} />
+                      ) : (
+                        <Sparkles size={18} />
+                      )}
+                    </div>
 
-                  <div className="message-body">
-                    {message.errorType && (
-                      <strong className="error-title">
-                        {getErrorTitle(
-                          message.errorType
-                        )}
-                      </strong>
-                    )}
-
-                    <p>{message.content}</p>
-
-                    {message.response && (
-                      <>
-                        <div className="answer-meta">
-                          {message.response
-                            .confidence && (
-                            <span>
-                              Confidence:{" "}
-                              {
-                                message.response
-                                  .confidence
-                              }
-                            </span>
+                    <div className="message-body">
+                      {message.errorType && (
+                        <strong className="error-title">
+                          {getErrorTitle(
+                            message.errorType
                           )}
+                        </strong>
+                      )}
 
-                          {message.response.route && (
-                            <span>
-                              Route:{" "}
-                              {
-                                message.response
-                                  .route
-                              }
-                            </span>
-                          )}
+                      <p>{message.content}</p>
 
-                          {typeof message.response
-                            .results_count ===
-                            "number" && (
-                            <span>
-                              Sources:{" "}
-                              {
-                                message.response
-                                  .results_count
-                              }
-                            </span>
-                          )}
-                        </div>
+                      {message.response && (
+                        <>
+                          <div className="answer-meta">
+                            {message.response
+                              .confidence && (
+                              <span>
+                                Confidence:{" "}
+                                {
+                                  message
+                                    .response
+                                    .confidence
+                                }
+                              </span>
+                            )}
 
-                        {message.response.route ===
-                          "tax" && (
-                          <Link
-                            className="inline-action-button"
-                            to="/tax"
-                          >
-                            <Calculator size={17} />
-                            Open Tax Regime Comparison
-                          </Link>
-                        )}
+                            {message.response
+                              .route && (
+                              <span>
+                                Route:{" "}
+                                {
+                                  message
+                                    .response
+                                    .route
+                                }
+                              </span>
+                            )}
 
-                        {message.response.filters
-                          ?.enforced_access_levels && (
-                          <div className="access-strip">
-                            Access used:{" "}
-                            {message.response.filters.enforced_access_levels.join(
-                              ", "
+                            {typeof message
+                              .response
+                              .results_count ===
+                              "number" && (
+                              <span>
+                                Results:{" "}
+                                {
+                                  message
+                                    .response
+                                    .results_count
+                                }
+                              </span>
                             )}
                           </div>
-                        )}
 
-                        {message.response.sources &&
-                          message.response.sources
-                            .length > 0 && (
-                            <div className="sources-grid">
-                              {message.response.sources.map(
-                                (
-                                  source,
-                                  index
-                                ) => (
-                                  <SourceCard
-                                    key={`${source.document_id}-${source.chunk_index}-${index}`}
-                                    source={source}
-                                  />
-                                )
+                          {message.response
+                            .route ===
+                            "onboarding" && (
+                            <Link
+                              className="inline-action-button"
+                              to="/onboarding"
+                            >
+                              <Briefcase
+                                size={17}
+                              />
+                              Open My Onboarding
+                            </Link>
+                          )}
+
+                          {message.response
+                            .route ===
+                            "poc" && (
+                            <Link
+                              className="inline-action-button"
+                              to="/onboarding"
+                            >
+                              <UserRound
+                                size={17}
+                              />
+                              View Onboarding
+                              Contacts
+                            </Link>
+                          )}
+
+                          {message.response
+                            .route ===
+                            "tax" && (
+                            <Link
+                              className="inline-action-button"
+                              to="/tax"
+                            >
+                              <Calculator
+                                size={17}
+                              />
+                              Open Tax Regime
+                              Comparison
+                            </Link>
+                          )}
+
+                          {message.response
+                            .filters
+                            ?.enforced_access_levels && (
+                            <div className="access-strip">
+                              Access used:{" "}
+                              {message.response.filters.enforced_access_levels.join(
+                                ", "
                               )}
                             </div>
                           )}
-                      </>
-                    )}
-                  </div>
-                </article>
-              ))}
+
+                          {message.response
+                            .sources &&
+                            message.response
+                              .sources.length >
+                              0 && (
+                              <div className="sources-grid">
+                                {message.response.sources.map(
+                                  (
+                                    source,
+                                    index
+                                  ) => (
+                                    <SourceCard
+                                      key={`${source.document_id}-${source.chunk_index}-${index}`}
+                                      source={
+                                        source
+                                      }
+                                    />
+                                  )
+                                )}
+                              </div>
+                            )}
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              )}
 
               {isAsking && (
                 <article className="message assistant">
@@ -609,7 +785,8 @@ export default function ChatPage() {
 
                   <div className="message-body">
                     <p>
-                      Processing your request...
+                      Processing your
+                      request...
                     </p>
                   </div>
                 </article>
@@ -623,16 +800,19 @@ export default function ChatPage() {
               <input
                 value={query}
                 onChange={(event) =>
-                  setQuery(event.target.value)
+                  setQuery(
+                    event.target.value
+                  )
                 }
-                placeholder="Ask about benefits, leave, tax regimes, compensation, IT security..."
+                placeholder="Ask about your manager, project, department, POC, benefits, leave or tax..."
                 disabled={isAsking}
               />
 
               <button
                 type="submit"
                 disabled={
-                  isAsking || !query.trim()
+                  isAsking ||
+                  !query.trim()
                 }
               >
                 <Send size={18} />
@@ -645,6 +825,7 @@ export default function ChatPage() {
             <div className="prompt-card">
               <div className="prompt-card-header">
                 <AlertTriangle size={18} />
+
                 <strong>
                   Try test questions
                 </strong>
@@ -672,7 +853,64 @@ export default function ChatPage() {
 
             <div className="prompt-card">
               <div className="prompt-card-header">
+                <Briefcase size={18} />
+
+                <strong>
+                  My onboarding
+                </strong>
+              </div>
+
+              <div className="example-list">
+                <button
+                  type="button"
+                  onClick={() =>
+                    submitQuestion(
+                      "Show my onboarding details."
+                    )
+                  }
+                  disabled={isAsking}
+                >
+                  Show my onboarding details
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    submitQuestion(
+                      "Who is my reporting manager?"
+                    )
+                  }
+                  disabled={isAsking}
+                >
+                  Who is my manager?
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    submitQuestion(
+                      "Which project am I assigned to?"
+                    )
+                  }
+                  disabled={isAsking}
+                >
+                  Show my project assignment
+                </button>
+
+                <Link
+                  className="inline-action-button"
+                  to="/onboarding"
+                >
+                  <Briefcase size={17} />
+                  Open My Onboarding
+                </Link>
+              </div>
+            </div>
+
+            <div className="prompt-card">
+              <div className="prompt-card-header">
                 <Calculator size={18} />
+
                 <strong>
                   Tax comparison
                 </strong>
@@ -684,7 +922,8 @@ export default function ChatPage() {
                   to="/tax"
                 >
                   <Calculator size={17} />
-                  Open Tax Regime Comparison
+                  Open Tax Regime
+                  Comparison
                 </Link>
               </div>
             </div>
@@ -692,6 +931,7 @@ export default function ChatPage() {
             <div className="prompt-card">
               <div className="prompt-card-header">
                 <ShieldCheck size={18} />
+
                 <strong>
                   Security checks
                 </strong>
@@ -719,7 +959,8 @@ export default function ChatPage() {
                   }
                   disabled={isAsking}
                 >
-                  Test employee HR-only block
+                  Test employee HR-only
+                  block
                 </button>
               </div>
             </div>
