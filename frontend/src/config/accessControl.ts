@@ -11,7 +11,8 @@ export type AppPermission =
   | "onboarding:self:view"
   | "tax:view"
   | "documents:manage"
-  | "employees:manage";
+  | "employees:manage"
+  | "audit:view";
 
 
 export type NavigationIcon =
@@ -19,7 +20,8 @@ export type NavigationIcon =
   | "onboarding"
   | "tax"
   | "employees"
-  | "documents";
+  | "documents"
+  | "audit";
 
 
 export type NavigationItem = {
@@ -34,7 +36,8 @@ export const ROLE_LABELS:
   Record<AppRole, string> = {
     employee: "Employee",
     hr_admin: "HR Admin",
-    finance_admin: "Finance Admin",
+    finance_admin:
+      "Finance Admin",
     it_admin: "IT Admin",
     super_admin: "Super Admin",
   };
@@ -49,7 +52,10 @@ const EMPLOYEE_PERMISSIONS:
 
 
 export const ROLE_PERMISSIONS:
-  Record<AppRole, AppPermission[]> = {
+  Record<
+    AppRole,
+    AppPermission[]
+  > = {
     employee: [
       ...EMPLOYEE_PERMISSIONS,
     ],
@@ -58,6 +64,7 @@ export const ROLE_PERMISSIONS:
       ...EMPLOYEE_PERMISSIONS,
       "documents:manage",
       "employees:manage",
+      "audit:view",
     ],
 
     finance_admin: [
@@ -74,6 +81,7 @@ export const ROLE_PERMISSIONS:
       ...EMPLOYEE_PERMISSIONS,
       "documents:manage",
       "employees:manage",
+      "audit:view",
     ],
   };
 
@@ -86,6 +94,7 @@ export const NAVIGATION_ITEMS:
       permission: "chat:view",
       icon: "chat",
     },
+
     {
       label: "My Onboarding",
       path: "/onboarding",
@@ -93,26 +102,39 @@ export const NAVIGATION_ITEMS:
         "onboarding:self:view",
       icon: "onboarding",
     },
+
     {
       label: "Tax Calculator",
       path: "/tax",
       permission: "tax:view",
       icon: "tax",
     },
+
     {
       label:
         "Employee Onboarding",
-      path: "/admin/onboarding",
+      path:
+        "/admin/onboarding",
       permission:
         "employees:manage",
       icon: "employees",
     },
+
     {
       label: "Documents",
-      path: "/admin/documents",
+      path:
+        "/admin/documents",
       permission:
         "documents:manage",
       icon: "documents",
+    },
+
+    {
+      label: "Audit Logs",
+      path:
+        "/admin/audit-logs",
+      permission: "audit:view",
+      icon: "audit",
     },
   ];
 
@@ -124,11 +146,14 @@ export function normalizeRole(
     role?.trim().toLowerCase();
 
   if (
-    normalizedRole === "hr_admin" ||
-    normalizedRole ===
-      "finance_admin" ||
-    normalizedRole === "it_admin" ||
-    normalizedRole === "super_admin"
+    normalizedRole
+      === "hr_admin"
+    || normalizedRole
+      === "finance_admin"
+    || normalizedRole
+      === "it_admin"
+    || normalizedRole
+      === "super_admin"
   ) {
     return normalizedRole;
   }
@@ -138,8 +163,11 @@ export function normalizeRole(
 
 
 export function hasPermission(
-  role: string | null | undefined,
-  permission: AppPermission
+  role:
+    string | null | undefined,
+
+  permission:
+    AppPermission
 ): boolean {
   const normalizedRole =
     normalizeRole(role);
@@ -179,16 +207,19 @@ export function getDefaultRoute(
     normalizeRole(role);
 
   if (
-    normalizedRole === "hr_admin" ||
-    normalizedRole === "super_admin"
+    normalizedRole
+      === "hr_admin"
+    || normalizedRole
+      === "super_admin"
   ) {
     return "/admin/onboarding";
   }
 
   if (
-    normalizedRole ===
-      "finance_admin" ||
-    normalizedRole === "it_admin"
+    normalizedRole
+      === "finance_admin"
+    || normalizedRole
+      === "it_admin"
   ) {
     return "/admin/documents";
   }

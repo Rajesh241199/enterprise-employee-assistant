@@ -19,6 +19,7 @@ import {
 } from "./context/AuthContext";
 
 import AccessDeniedPage from "./pages/AccessDeniedPage";
+import AdminAuditLogsPage from "./pages/AdminAuditLogsPage";
 import AdminDocumentsPage from "./pages/AdminDocumentsPage";
 import AdminOnboardingPage from "./pages/AdminOnboardingPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
@@ -258,6 +259,17 @@ export default function App() {
                 }
               >
                 <AdminDocumentsPage />
+              </PermissionRoute>
+            }
+          />
+
+          <Route
+            path="/admin/audit-logs"
+            element={
+              <PermissionRoute
+                permission="audit:view"
+              >
+                <AdminAuditLogsPage />
               </PermissionRoute>
             }
           />

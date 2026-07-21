@@ -2875,3 +2875,364 @@ The centralized layout hides those duplicated sidebars.
   color: #9fb1c8;
   background: transparent;
 }
+/* Persistent audit-log viewer */
+
+.audit-page {
+  width: 100%;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+  color: #f8fafc;
+  background: #081225;
+}
+
+.audit-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.audit-page-header > div > span,
+.audit-results-heading > div > span {
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.audit-page-header h1,
+.audit-results-heading h2 {
+  margin: 0.25rem 0;
+}
+
+.audit-page-header p {
+  margin: 0;
+  color: #9fb1c8;
+}
+
+.audit-page-header button,
+.audit-filter-actions button,
+.audit-pagination button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.72rem 0.9rem;
+  color: #ffffff;
+  font-weight: 750;
+  background:
+    linear-gradient(
+      135deg,
+      #2563eb,
+      #0891b2
+    );
+}
+
+.audit-page-header button:disabled,
+.audit-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.audit-summary-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      5,
+      minmax(0, 1fr)
+    );
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.audit-summary-card {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid
+    rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  padding: 0.9rem;
+  background:
+    rgba(15, 23, 42, 0.72);
+}
+
+.audit-summary-card > div {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  color: #bfdbfe;
+  background:
+    rgba(37, 99, 235, 0.16);
+}
+
+.audit-summary-card span {
+  color: #9fb1c8;
+  font-size: 0.78rem;
+}
+
+.audit-summary-card strong {
+  font-size: 1.45rem;
+}
+
+.audit-filter-card,
+.audit-results-card {
+  border: 1px solid
+    rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  padding: 1rem;
+  background:
+    rgba(15, 23, 42, 0.72);
+}
+
+.audit-filter-card {
+  margin-bottom: 1rem;
+}
+
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      5,
+      minmax(0, 1fr)
+    );
+  gap: 0.75rem;
+}
+
+.audit-filter-grid label {
+  display: grid;
+  gap: 0.38rem;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.audit-filter-grid input,
+.audit-filter-grid select {
+  width: 100%;
+  min-height: 43px;
+  border: 1px solid
+    rgba(148, 163, 184, 0.22);
+  border-radius: 11px;
+  padding: 0 0.7rem;
+  color: #f8fafc;
+  background:
+    rgba(2, 6, 23, 0.62);
+  outline: none;
+}
+
+.audit-filter-grid input:focus,
+.audit-filter-grid select:focus {
+  border-color:
+    rgba(96, 165, 250, 0.75);
+}
+
+.audit-filter-grid option {
+  color: #0f172a;
+}
+
+.audit-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+}
+
+.audit-filter-actions
+.secondary-button {
+  border: 1px solid
+    rgba(148, 163, 184, 0.22);
+  color: #dbeafe;
+  background:
+    rgba(30, 41, 59, 0.7);
+}
+
+.audit-results-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.audit-results-heading > span {
+  color: #9fb1c8;
+  font-size: 0.84rem;
+}
+
+.audit-log-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.audit-log-card {
+  border: 1px solid
+    rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  padding: 0.85rem;
+  background:
+    rgba(2, 6, 23, 0.38);
+}
+
+.audit-log-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.audit-log-time {
+  color: #8ea3bd;
+  font-size: 0.75rem;
+}
+
+.audit-log-card h3 {
+  margin: 0.25rem 0 0;
+  font-size: 0.96rem;
+  text-transform: capitalize;
+}
+
+.audit-outcome-pill {
+  border-radius: 999px;
+  padding: 0.3rem 0.58rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.audit-outcome-pill.success {
+  color: #a7f3d0;
+  background:
+    rgba(5, 150, 105, 0.18);
+}
+
+.audit-outcome-pill.failure {
+  color: #fecaca;
+  background:
+    rgba(185, 28, 28, 0.2);
+}
+
+.audit-outcome-pill.blocked {
+  color: #fde68a;
+  background:
+    rgba(180, 83, 9, 0.2);
+}
+
+.audit-log-details {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      5,
+      minmax(0, 1fr)
+    );
+  gap: 0.6rem;
+  margin: 0.8rem 0;
+}
+
+.audit-log-details > div {
+  min-width: 0;
+}
+
+.audit-log-details dt {
+  color: #8499b4;
+  font-size: 0.72rem;
+}
+
+.audit-log-details dd {
+  margin: 0.2rem 0 0;
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.audit-metadata {
+  border-top: 1px solid
+    rgba(148, 163, 184, 0.11);
+  padding-top: 0.65rem;
+}
+
+.audit-metadata summary {
+  cursor: pointer;
+  color: #93c5fd;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.audit-metadata pre {
+  max-height: 300px;
+  overflow: auto;
+  border-radius: 10px;
+  padding: 0.75rem;
+  color: #bfdbfe;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  background:
+    rgba(2, 6, 23, 0.7);
+}
+
+.audit-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.empty-state {
+  padding: 2rem;
+  color: #9fb1c8;
+  text-align: center;
+}
+
+@media (max-width: 1200px) {
+  .audit-summary-grid {
+    grid-template-columns:
+      repeat(
+        3,
+        minmax(0, 1fr)
+      );
+  }
+
+  .audit-filter-grid {
+    grid-template-columns:
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
+  }
+
+  .audit-log-details {
+    grid-template-columns:
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
+  }
+}
+
+@media (max-width: 700px) {
+  .audit-page-header {
+    flex-direction: column;
+  }
+
+  .audit-summary-grid,
+  .audit-filter-grid,
+  .audit-log-details {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-filter-actions,
+  .audit-pagination {
+    flex-direction: column;
+  }
+
+  .audit-filter-actions button,
+  .audit-pagination button {
+    width: 100%;
+  }
+}

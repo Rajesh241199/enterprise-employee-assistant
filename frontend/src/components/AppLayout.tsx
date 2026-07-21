@@ -5,6 +5,7 @@ import {
   Lock,
   LogOut,
   MessageSquareText,
+  ScrollText,
   ShieldCheck,
   UserRound,
   Users,
@@ -21,7 +22,9 @@ import {
   getVisibleNavigation,
   type NavigationIcon,
 } from "../config/accessControl";
-import { useAuth } from "../context/AuthContext";
+import {
+  useAuth,
+} from "../context/AuthContext";
 
 
 const NAVIGATION_ICONS:
@@ -29,11 +32,23 @@ const NAVIGATION_ICONS:
     NavigationIcon,
     LucideIcon
   > = {
-    chat: MessageSquareText,
-    onboarding: Briefcase,
-    tax: Calculator,
-    employees: Users,
-    documents: FileText,
+    chat:
+      MessageSquareText,
+
+    onboarding:
+      Briefcase,
+
+    tax:
+      Calculator,
+
+    employees:
+      Users,
+
+    documents:
+      FileText,
+
+    audit:
+      ScrollText,
   };
 
 
@@ -43,7 +58,8 @@ export default function AppLayout() {
     logout,
   } = useAuth();
 
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
   const navigationItems =
     getVisibleNavigation(
@@ -58,6 +74,7 @@ export default function AppLayout() {
 
   function handleLogout() {
     logout();
+
     navigate(
       "/login",
       {
@@ -89,7 +106,9 @@ export default function AppLayout() {
 
         <nav
           className="role-app-navigation"
-          aria-label="Application navigation"
+          aria-label={
+            "Application navigation"
+          }
         >
           {navigationItems.map(
             (item) => {
@@ -143,8 +162,8 @@ export default function AppLayout() {
 
             <div className="role-user-details">
               <strong>
-                {user?.full_name ??
-                  "User"}
+                {user?.full_name
+                  ?? "User"}
               </strong>
 
               <span>
