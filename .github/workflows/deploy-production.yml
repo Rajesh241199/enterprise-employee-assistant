@@ -1,0 +1,282 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows:
+      - Continuous Integration
+    types:
+      - completed
+
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to confirm production deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: employee-assistant-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+
+    if: >-
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      ) ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/main' &&
+        inputs.confirmation == 'DEPLOY'
+      )
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    environment:
+      name: production
+      url: https://15.207.182.237
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+    steps:
+      - name: Resolve approved deployment commit
+        id: source
+        shell: bash
+        env:
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            DEPLOY_SHA="$WORKFLOW_RUN_SHA"
+          else
+            DEPLOY_SHA="$GITHUB_SHA"
+          fi
+
+          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid deployment commit: $DEPLOY_SHA"
+            exit 1
+          fi
+
+          echo "Approved deployment commit: $DEPLOY_SHA"
+          echo "sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout approved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: employee-assistant-production
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify assumed AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Verify production instance is online
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PING_STATUS="$(
+            aws ssm describe-instance-information \
+              --region "$AWS_REGION" \
+              --filters \
+                "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
+              --query \
+                "InstanceInformationList[0].PingStatus" \
+              --output text
+          )"
+
+          echo "Production SSM status: $PING_STATUS"
+
+          if [ "$PING_STATUS" != "Online" ]; then
+            echo "Production instance is not online in AWS Systems Manager."
+            exit 1
+          fi
+
+      - name: Build encrypted-safe SSM command payload
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          {
+            printf 'export EXPECTED_SHA=%q\n' "$DEPLOY_SHA"
+            sed 's/\r$//' infra/aws-ec2/deploy-production.sh
+          } > remote-deploy.sh
+
+          SCRIPT_BASE64="$(
+            base64 -w 0 remote-deploy.sh
+          )"
+
+          REMOTE_COMMAND="echo '$SCRIPT_BASE64' | base64 -d > /tmp/employee-assistant-deploy.sh && chmod 700 /tmp/employee-assistant-deploy.sh && bash /tmp/employee-assistant-deploy.sh; STATUS=\$?; rm -f /tmp/employee-assistant-deploy.sh; exit \$STATUS"
+
+          jq -n \
+            --arg command "$REMOTE_COMMAND" \
+            '{
+              commands: [$command],
+              executionTimeout: ["3600"]
+            }' \
+            > ssm-parameters.json
+
+      - name: Start production deployment
+        id: command
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --region "$AWS_REGION" \
+              --instance-ids "$EC2_INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Deploy employee assistant commit $DEPLOY_SHA" \
+              --timeout-seconds 3600 \
+              --parameters file://ssm-parameters.json \
+              --query "Command.CommandId" \
+              --output text
+          )"
+
+          echo "SSM command ID: $COMMAND_ID"
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for production deployment
+        shell: bash
+        env:
+          COMMAND_ID: ${{ steps.command.outputs.command_id }}
+        run: |
+          set -euo pipefail
+
+          FINAL_STATUS=""
+
+          for attempt in $(seq 1 360)
+          do
+            STATUS="$(
+              aws ssm get-command-invocation \
+                --region "$AWS_REGION" \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$EC2_INSTANCE_ID" \
+                --query "Status" \
+                --output text \
+                2>/dev/null \
+                || echo "Pending"
+            )"
+
+            echo "Deployment status [$attempt/360]: $STATUS"
+
+            case "$STATUS" in
+              Success)
+                FINAL_STATUS="Success"
+                break
+                ;;
+
+              Pending|InProgress|Delayed)
+                sleep 10
+                ;;
+
+              *)
+                FINAL_STATUS="$STATUS"
+                break
+                ;;
+            esac
+          done
+
+          if [ -z "$FINAL_STATUS" ]; then
+            FINAL_STATUS="TimedOut"
+          fi
+
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            > command-result.json \
+            || true
+
+          echo "----- Production deployment output -----"
+
+          jq -r \
+            '.StandardOutputContent // ""' \
+            command-result.json \
+            2>/dev/null \
+            || true
+
+          echo "----- Production deployment errors -----"
+
+          jq -r \
+            '.StandardErrorContent // ""' \
+            command-result.json \
+            2>/dev/null \
+            || true
+
+          echo "Final deployment status: $FINAL_STATUS"
+
+          if [ "$FINAL_STATUS" != "Success" ]; then
+            exit 1
+          fi
+
+      - name: Verify public production endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RESPONSE="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --insecure \
+              --retry 12 \
+              --retry-delay 5 \
+              https://15.207.182.237/ready
+          )"
+
+          echo "$RESPONSE" |
+            python3 -m json.tool
+
+          python3 - "$RESPONSE" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+services = payload.get("services", {})
+
+assert payload.get("status") == "ok"
+assert services.get("postgres") == "ok"
+assert services.get("qdrant") == "ok"
+PY
+
+      - name: Write deployment summary
+        env:
+          DEPLOY_SHA: ${{ steps.source.outputs.sha }}
+          COMMAND_ID: ${{ steps.command.outputs.command_id }}
+        run: |
+          {
+            echo "## Production deployment successful"
+            echo
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Region: \`$AWS_REGION\`"
+            echo "- EC2 instance: \`$EC2_INSTANCE_ID\`"
+            echo "- SSM command: \`$COMMAND_ID\`"
+            echo "- Production URL: https://15.207.182.237"
+          } >> "$GITHUB_STEP_SUMMARY"
