@@ -1,0 +1,64 @@
+name: Verify AWS OIDC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify-aws-access:
+    name: Verify AWS access
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment:
+      name: production
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: employee-assistant-oidc-test
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Display assumed AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Verify production instance is online
+        run: |
+          INSTANCE_INFORMATION="$(
+            aws ssm describe-instance-information \
+              --region "$AWS_REGION" \
+              --filters \
+                "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
+              --query \
+                "InstanceInformationList[0].[InstanceId,PingStatus,PlatformName,AgentVersion]" \
+              --output text
+          )"
+
+          echo "$INSTANCE_INFORMATION"
+
+          PING_STATUS="$(
+            aws ssm describe-instance-information \
+              --region "$AWS_REGION" \
+              --filters \
+                "Key=InstanceIds,Values=$EC2_INSTANCE_ID" \
+              --query \
+                "InstanceInformationList[0].PingStatus" \
+              --output text
+          )"
+
+          if [ "$PING_STATUS" != "Online" ]; then
+            echo "Production instance is not online in Systems Manager."
+            exit 1
+          fi
+
+          echo "GitHub OIDC and AWS SSM access verified successfully."
